@@ -1,5 +1,16 @@
+/**
+ * This example demostrate how to duplicate the same file on two buckets (two different
+ * providers). It utilizing the resetBucket() api to reset the bucket between the uses.
+ * 
+ * @cross/env is only used in these examples to easily read a .env file and at the same
+ * time make sure that required environment variables are supplied as they will throw an error
+ * if they are missing when using requireEnv().
+ * 
+ */
+
 import "jsr:@cross/env@^1.0.2/load";
 import { requireEnv } from "jsr:@cross/env@^1.0.2";
+
 import { fileExists, initBucket, readFile, resetBucket, writeFile } from "../mod.ts";
 
 async function main() {
@@ -7,7 +18,7 @@ async function main() {
         // Initialize S3 instance
         console.log("Initializing S3 connection...");
         initBucket({
-            provider: "s3",
+            provider: "aws-s3",
             bucketName: requireEnv("S3_BUCKET_NAME"),
             region: requireEnv("S3_REGION"),
             credentials: {
@@ -39,7 +50,7 @@ async function main() {
         // Initialize R2 instance
         console.log("Initializing R2 connection...");
         initBucket({
-            provider: "r2",
+            provider: "cf-r2",
             bucketName: requireEnv("R2_BUCKET_NAME"),
             accountId: requireEnv("R2_ACCOUNT_ID"),
             credentials: {

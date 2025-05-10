@@ -10,10 +10,25 @@ import type { _Object, S3Client } from "@aws-sdk/client-s3";
 import type { Storage } from "@google-cloud/storage";
 
 /**
- * Write content to a file in the bucket
+ * Write content to a file in the bucket.
+ *
  * @param path Path to the file
- * @param content Content to write
+ * @param content Content to write (string or Uint8Array)
  * @param bucketName Optional name of the bucket instance to use
+ * @throws Error if the bucket is not initialized or if the write operation fails
+ *
+ * @example
+ * ```ts
+ * // Write a text file
+ * await writeFile("hello.txt", "Hello, World!");
+ *
+ * // Write binary data
+ * const data = new Uint8Array([1, 2, 3, 4, 5]);
+ * await writeFile("data.bin", data);
+ *
+ * // Write to a specific bucket
+ * await writeFile("hello.txt", "Hello, World!", "my-custom-bucket");
+ * ```
  */
 export async function writeFile(path: string, content: string | Uint8Array, bucketName?: string): Promise<void> {
     const bucket = getBucket(bucketName);
@@ -38,10 +53,24 @@ export async function writeFile(path: string, content: string | Uint8Array, buck
 }
 
 /**
- * Read content from a file in the bucket
+ * Read content from a file in the bucket.
+ * 
  * @param path Path to the file
  * @param bucketName Optional name of the bucket instance to use
  * @returns File content as string, or null if the file doesn't exist
+ * @throws Error if the bucket is not initialized or if the read operation fails
+ * 
+ * @example
+ * ```ts
+ * // Read a file
+ * const content = await readFile("hello.txt");
+ * if (content !== null) {
+ *   console.log(content); // "Hello, World!"
+ * }
+ * 
+ * // Read from a specific bucket
+ * const content = await readFile("hello.txt", "my-custom-bucket");
+ * ```
  */
 export async function readFile(path: string, bucketName?: string): Promise<string | null> {
     const bucket = getBucket(bucketName);
@@ -70,18 +99,35 @@ export async function readFile(path: string, bucketName?: string): Promise<strin
             return text;
         }
     } catch (error: unknown) {
-        if (error instanceof Error && (error.name === "NoSuchKey" || error.name === "NotFound")) {
-            return null;
+        if (error instanceof Error) {
+            if (error.name === "NoSuchKey" || error.name === "NotFound") {
+                return null;
+            }
+            if ('code' in error && typeof error.code === 'number' && error.code === 404) {
+                return null;
+           }
+           throw error;
         }
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        throw new Error(`Failed to read file ${path}: ${errorMessage}`);
+        const errorMessage = String(error);
+        throw new Error(`An unexpected non-Error value was thrown during file read: ${errorMessage}`);
     }
 }
 
 /**
- * Delete a file from the bucket
+ * Delete a file from the bucket.
+ *
  * @param path Path to the file
  * @param bucketName Optional name of the bucket instance to use
+ * @throws Error if the bucket is not initialized or if the delete operation fails
+ *
+ * @example
+ * ```ts
+ * // Delete a file
+ * await deleteFile("hello.txt");
+ *
+ * // Delete from a specific bucket
+ * await deleteFile("hello.txt", "my-custom-bucket");
+ * ```
  */
 export async function deleteFile(path: string, bucketName?: string): Promise<void> {
     const bucket = getBucket(bucketName);
@@ -105,10 +151,26 @@ export async function deleteFile(path: string, bucketName?: string): Promise<voi
 }
 
 /**
- * List files in a directory
- * @param prefix Directory prefix to list files from
+ * List files in a directory.
+ *
+ * @param prefix Directory prefix to list files from (e.g., "folder/" or "folder/subfolder/")
  * @param bucketName Optional name of the bucket instance to use
  * @returns Array of file paths
+ * @throws Error if the bucket is not initialized or if the list operation fails
+ *
+ * @example
+ * ```ts
+ * // List all files
+ * const files = await listFiles();
+ * console.log(files); // ["file1.txt", "file2.txt", "folder/file3.txt"]
+ *
+ * // List files in a directory
+ * const files = await listFiles("folder/");
+ * console.log(files); // ["folder/file3.txt", "folder/file4.txt"]
+ *
+ * // List from a specific bucket
+ * const files = await listFiles("folder/", "my-custom-bucket");
+ * ```
  */
 export async function listFiles(prefix?: string, bucketName?: string): Promise<string[]> {
     const bucket = getBucket(bucketName);
@@ -133,10 +195,24 @@ export async function listFiles(prefix?: string, bucketName?: string): Promise<s
 }
 
 /**
- * Check if a file exists in the bucket
+ * Check if a file exists in the bucket.
+ *
  * @param path Path to the file
  * @param bucketName Optional name of the bucket instance to use
  * @returns True if file exists, false otherwise
+ * @throws Error if the bucket is not initialized or if the check operation fails
+ *
+ * @example
+ * ```ts
+ * // Check if a file exists
+ * const exists = await fileExists("hello.txt");
+ * if (exists) {
+ *   console.log("File exists!");
+ * }
+ *
+ * // Check in a specific bucket
+ * const exists = await fileExists("hello.txt", "my-custom-bucket");
+ * ```
  */
 export async function fileExists(path: string, bucketName?: string): Promise<boolean> {
     const bucket = getBucket(bucketName);

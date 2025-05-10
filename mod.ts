@@ -1,9 +1,13 @@
 /**
- * BucketFS - A Unified Cloud Storage Abstraction Layer
+ * BucketFS - A Cloud Storage Abstraction Layer
  *
  * BucketFS provides a interface for working with multiple cloud storage providers,
- * including AWS S3 and Cloudflare R2. It offers a consistent API that abstracts away the
- * complexities and differences between various storage services.
+ * including AWS S3, Cloudflare R2, and Google Cloud Storage (GCS). It offers a consistent
+ * API that abstracts away the complexities and differences between various storage services.
+ *
+ * Features:
+ * - Multi-provider support
+ * - Multiple bucket management
  *
  * Use Cases:
  * - Cloud storage abstraction in applications
@@ -11,7 +15,6 @@
  * - Multi-cloud storage strategies
  * - Simplified storage operations across different providers
  *
- * @module bucketfs
  */
 
 // Types

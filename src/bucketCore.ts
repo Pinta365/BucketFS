@@ -1,5 +1,6 @@
 import { getBucket } from "./bucketConfig.ts";
 import {
+    CopyObjectCommand,
     DeleteObjectCommand,
     GetObjectCommand,
     HeadObjectCommand,
@@ -54,12 +55,12 @@ export async function writeFile(path: string, content: string | Uint8Array, buck
 
 /**
  * Read content from a file in the bucket.
- * 
+ *
  * @param path Path to the file
  * @param bucketName Optional name of the bucket instance to use
  * @returns File content as string, or null if the file doesn't exist
  * @throws Error if the bucket is not initialized or if the read operation fails
- * 
+ *
  * @example
  * ```ts
  * // Read a file
@@ -67,7 +68,7 @@ export async function writeFile(path: string, content: string | Uint8Array, buck
  * if (content !== null) {
  *   console.log(content); // "Hello, World!"
  * }
- * 
+ *
  * // Read from a specific bucket
  * const content = await readFile("hello.txt", "my-custom-bucket");
  * ```
@@ -84,6 +85,7 @@ export async function readFile(path: string, bucketName?: string): Promise<strin
             const bucketInstance = client.bucket(bucket.bucketName);
             const file = bucketInstance.file(path);
             const [content] = await file.download();
+            //const [metadata] = await file.getMetadata();
             return new TextDecoder().decode(content);
         } else {
             const client = bucket.client as S3Client;
@@ -103,10 +105,10 @@ export async function readFile(path: string, bucketName?: string): Promise<strin
             if (error.name === "NoSuchKey" || error.name === "NotFound") {
                 return null;
             }
-            if ('code' in error && typeof error.code === 'number' && error.code === 404) {
+            if ("code" in error && typeof error.code === "number" && error.code === 404) {
                 return null;
-           }
-           throw error;
+            }
+            throw error;
         }
         const errorMessage = String(error);
         throw new Error(`An unexpected non-Error value was thrown during file read: ${errorMessage}`);
@@ -147,6 +149,69 @@ export async function deleteFile(path: string, bucketName?: string): Promise<voi
             Key: path,
         });
         await client.send(command);
+    }
+}
+
+/**
+ * Move or rename a file in the bucket.
+ * This operation moves a file from an old path to a new path.
+ * If the new path specifies a different directory, the file is moved.
+ * If the new path specifies the same directory but a different name, the file is renamed.
+ * If both the directory and name change, the file is moved and renamed.
+ * This is typically implemented as a copy to the new path followed by a deletion of the old path.
+ *
+ * @param oldPath The current path of the file
+ * @param newPath The new path for the file
+ * @param bucketName Optional name of the bucket instance to use
+ * @throws Error if the bucket is not initialized or if the move/rename operation fails
+ *
+ * @example
+ * ```ts
+ * // Rename a file in the same directory
+ * await moveFile("myfolder/oldname.txt", "myfolder/newname.txt");
+ *
+ * // Move a file to a different directory
+ * await moveFile("myfolder/myfile.txt", "anotherfolder/myfile.txt");
+ *
+ * // Move and rename a file
+ * await moveFile("myfolder/oldname.txt", "anotherfolder/newname.txt");
+ *
+ * // Move/rename in a specific bucket
+ * await moveFile("old/path/file.txt", "new/path/file.txt", "my-custom-bucket");
+ * ```
+ */
+export async function moveFile(oldPath: string, newPath: string, bucketName?: string): Promise<void> {
+    const bucket = getBucket(bucketName);
+    if (!bucket) {
+        throw new Error(`Bucket ${bucketName || "default"} not initialized`);
+    }
+
+    try {
+        if (bucket.provider === "gcs") {
+            const client = bucket.client as Storage;
+            const bucketInstance = client.bucket(bucket.bucketName);
+            const oldFile = bucketInstance.file(oldPath);
+            const newFile = bucketInstance.file(newPath);
+
+            await oldFile.copy(newFile);
+            await oldFile.delete();
+        } else {
+            const client = bucket.client as S3Client;
+            const copyCommand = new CopyObjectCommand({
+                Bucket: bucket.bucketName,
+                CopySource: `${bucket.bucketName}/${oldPath}`,
+                Key: newPath,
+            });
+            await client.send(copyCommand);
+            const deleteCommand = new DeleteObjectCommand({
+                Bucket: bucket.bucketName,
+                Key: oldPath,
+            });
+            await client.send(deleteCommand);
+        }
+    } catch (error) {
+        // Improve error handling
+        throw new Error(`Failed to move/rename file from ${oldPath} to ${newPath}: ${error}`);
     }
 }
 

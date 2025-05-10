@@ -1,11 +1,10 @@
 /**
  * This example demostrate how to duplicate the same file on two buckets (two different
  * providers). It utilizing the resetBucket() api to reset the bucket between the uses.
- * 
+ *
  * @cross/env is only used in these examples to easily read a .env file and at the same
  * time make sure that required environment variables are supplied as they will throw an error
  * if they are missing when using requireEnv().
- * 
  */
 
 import "jsr:@cross/env@^1.0.2/load";

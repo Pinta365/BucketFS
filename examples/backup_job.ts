@@ -2,11 +2,10 @@
  * This example demostrate how BucketFS could be used to read the contents of a directory on
  * AWS S3 and backup it on CF R2 with utilizing the multi bucket capabilities of the
  * library.
- * 
+ *
  * @cross/env is only used in these examples to easily read a .env file and at the same
  * time make sure that required environment variables are supplied as they will throw an error
  * if they are missing when using requireEnv().
- * 
  */
 import "jsr:@cross/env@^1.0.2/load";
 import { requireEnv } from "jsr:@cross/env@^1.0.2";

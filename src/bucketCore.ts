@@ -3,6 +3,7 @@ import {
     CopyObjectCommand,
     DeleteObjectCommand,
     GetObjectCommand,
+    HeadBucketCommand,
     HeadObjectCommand,
     ListObjectsV2Command,
     PutObjectCommand,
@@ -306,5 +307,51 @@ export async function fileExists(path: string, bucketName?: string): Promise<boo
             return false;
         }
         throw error;
+    }
+}
+
+/**
+ * Check authentication/connection to the bucket with minimal/no operational cost.
+ * For S3/R2/Spaces, uses HeadBucketCommand. For GCS, uses getMetadata on the bucket.
+ *
+ * @param bucketName Optional name of the bucket instance to use
+ * @returns True if authentication succeeds, false otherwise
+ * @throws Error if the bucket is not initialized or if the check operation fails for reasons other than auth
+ *
+ * @example
+ * ```ts
+ * const ok = await checkBucketAuth();
+ * if (!ok) throw new Error("Auth failed");
+ * ```
+ */
+export async function checkBucketAuth(bucketName?: string): Promise<boolean> {
+    const bucket = getBucket(bucketName);
+    if (!bucket) {
+        throw new Error(`Bucket ${bucketName || "default"} not initialized`);
+    }
+    try {
+        if (bucket.provider === "gcs") {
+            const client = bucket.client as Storage;
+            const bucketInstance = client.bucket(bucket.bucketName);
+            await bucketInstance.getMetadata();
+            return true;
+        } else {
+            // S3, R2, Spaces
+            const client = bucket.client as S3Client;
+            const command = new HeadBucketCommand({ Bucket: bucket.bucketName });
+            await client.send(command);
+            return true;
+        }
+    } catch (error) {
+        if (error && typeof error === "object" && "name" in error && (error as any).name === "Forbidden") {
+            return false;
+        }
+        if (
+            error && typeof error === "object" && "$metadata" in error &&
+            (error as any).$metadata?.httpStatusCode === 403
+        ) {
+            return false;
+        }
+        return false;
     }
 }

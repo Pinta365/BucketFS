@@ -14,7 +14,10 @@ Can also be used to persist storage in serverless environments (e.g., Deno Deplo
 - TypeScript support with full type definitions
 - Easy provider switching without code changes
 
-**Important Note on Costs:** Using BucketFS involves interacting with third-party cloud storage providers (Amazon S3, Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces). These providers typically charge for storage, data transfer, and operations. While most providers offer a free tier, it is the user's responsibility to understand and monitor the pricing of their chosen provider to avoid unexpected costs.
+**Important Note on Costs:** Using BucketFS involves interacting with third-party cloud storage providers (Amazon S3,
+Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces). These providers typically charge for storage, data transfer,
+and operations. While most providers offer a free tier, it is the user's responsibility to understand and monitor the
+pricing of their chosen provider to avoid unexpected costs.
 
 ## Installation
 

@@ -65,7 +65,7 @@ async function main() {
         region: requireEnv("DO_SPACES_REGION"),
         credentials: {
             accessKeyId: requireEnv("DO_SPACES_ACCESS_KEY_ID"),
-            secretAccessKey: requireEnv("DO_SECRET_ACCESS_KEY"),
+            secretAccessKey: requireEnv("DO_SPACES_SECRET_ACCESS_KEY"),
         },
     });
     */

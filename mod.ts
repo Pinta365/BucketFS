@@ -23,4 +23,4 @@ export type { BucketConfig, BucketInstance, StorageProvider } from "./src/bucket
 export { getBucket, initBucket, listBuckets, resetBucket } from "./src/bucketConfig.ts";
 
 // File operations
-export { deleteFile, fileExists, listFiles, moveFile, readFile, writeFile } from "./src/bucketCore.ts";
+export { checkBucketAuth, deleteFile, fileExists, listFiles, moveFile, readFile, writeFile } from "./src/bucketCore.ts";

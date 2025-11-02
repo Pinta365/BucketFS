@@ -174,6 +174,7 @@ export function initBucket(config: BucketConfig, name?: string): string {
         if (config.cache?.enabled) {
             const cache = new Cache(
                 config.cache.maxSize ?? 1000,
+                config.cache.maxMemorySize,
                 config.cache.ttl,
             );
             setCache(instanceName, cache);
@@ -203,6 +204,7 @@ export function initBucket(config: BucketConfig, name?: string): string {
         if (config.cache?.enabled) {
             const cache = new Cache(
                 config.cache.maxSize ?? 1000,
+                config.cache.maxMemorySize,
                 config.cache.ttl,
             );
             setCache(instanceName, cache);
@@ -231,6 +233,7 @@ export function initBucket(config: BucketConfig, name?: string): string {
         if (config.cache?.enabled) {
             const cache = new Cache(
                 config.cache.maxSize ?? 1000,
+                config.cache.maxMemorySize,
                 config.cache.ttl,
             );
             setCache(instanceName, cache);

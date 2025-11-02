@@ -2,6 +2,7 @@ import { S3Client } from "@aws-sdk/client-s3";
 import { Storage } from "@google-cloud/storage";
 import { Cache, removeCache, setCache } from "./cache.ts";
 import type { CacheOptions } from "./cache.ts";
+import { MemoryStorage } from "./memoryStorage.ts";
 
 /**
  * Supported cloud storage providers.
@@ -9,8 +10,9 @@ import type { CacheOptions } from "./cache.ts";
  * - `cf-r2`: Cloudflare R2
  * - `gcs`: Google Cloud Storage
  * - `do-spaces`: DigitalOcean Spaces
+ * - `memory`: In-memory only storage (no persistence, useful for testing)
  */
-export type StorageProvider = "aws-s3" | "cf-r2" | "gcs" | "do-spaces";
+export type StorageProvider = "aws-s3" | "cf-r2" | "gcs" | "do-spaces" | "memory";
 
 /**
  * Credentials for S3-compatible storage providers (ex. S3, R2 and spaces).
@@ -80,6 +82,13 @@ interface GCSCredentials {
  *     secretAccessKey: "your-secret-key"
  *   }
  * };
+ *
+ * // Memory provider (in-memory only, no persistence - useful for testing)
+ * const memoryConfig: BucketConfig = {
+ *   provider: "memory",
+ *   bucketName: "my-bucket"
+ *   // No credentials needed
+ * };
  * ```
  */
 export interface BucketConfig {
@@ -93,8 +102,8 @@ export interface BucketConfig {
     accountId?: string;
     /** The project ID for GCS provider (required for GCS) */
     projectId?: string;
-    /** The credentials for the storage provider */
-    credentials: S3Credentials | GCSCredentials;
+    /** The credentials for the storage provider (not required for memory provider) */
+    credentials?: S3Credentials | GCSCredentials;
     /** Optional cache configuration */
     cache?: CacheOptions;
 }
@@ -104,7 +113,7 @@ export interface BucketConfig {
  */
 export interface BucketInstance {
     /** The storage client instance */
-    client: S3Client | Storage;
+    client: S3Client | Storage | MemoryStorage;
     /** The name of the bucket */
     bucketName: string;
     /** The storage provider */
@@ -145,7 +154,7 @@ export function initBucket(config: BucketConfig, name?: string): string {
     const { provider, bucketName, region, accountId, projectId, credentials } = config;
     const instanceName = name || bucketName;
 
-    if (!credentials) {
+    if (provider !== "memory" && !credentials) {
         throw new Error("Credentials are required");
     }
 
@@ -230,6 +239,25 @@ export function initBucket(config: BucketConfig, name?: string): string {
         });
 
         // Initialize cache if enabled
+        if (config.cache?.enabled) {
+            const cache = new Cache(
+                config.cache.maxSize ?? 1000,
+                config.cache.maxMemorySize,
+                config.cache.ttl,
+            );
+            setCache(instanceName, cache);
+        }
+    } else if (provider === "memory") {
+        // In-memory storage - no credentials needed
+        bucketInstances.set(instanceName, {
+            client: new MemoryStorage(),
+            bucketName,
+            provider,
+            cacheOptions: config.cache,
+        });
+
+        // Note: Caching is typically not needed for memory provider since it's already in memory
+        // But we support it for consistency
         if (config.cache?.enabled) {
             const cache = new Cache(
                 config.cache.maxSize ?? 1000,

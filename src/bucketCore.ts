@@ -1,5 +1,6 @@
 import { getBucket } from "./bucketConfig.ts";
 import { getCache } from "./cache.ts";
+import type { MemoryStorage } from "./memoryStorage.ts";
 import {
     CopyObjectCommand,
     DeleteObjectCommand,
@@ -39,7 +40,10 @@ export async function writeFile(path: string, content: string | Uint8Array, buck
         throw new Error(`Bucket ${bucketName || "default"} not initialized`);
     }
 
-    if (bucket.provider === "gcs") {
+    if (bucket.provider === "memory") {
+        const client = bucket.client as MemoryStorage;
+        client.write(path, content);
+    } else if (bucket.provider === "gcs") {
         const client = bucket.client as Storage;
         const bucketInstance = client.bucket(bucket.bucketName);
         const file = bucketInstance.file(path);
@@ -101,7 +105,14 @@ export async function readFile(path: string, bucketName?: string): Promise<strin
 
     try {
         let content: string;
-        if (bucket.provider === "gcs") {
+        if (bucket.provider === "memory") {
+            const client = bucket.client as MemoryStorage;
+            const fileContent = client.read(path);
+            if (!fileContent) {
+                return null;
+            }
+            content = new TextDecoder().decode(fileContent);
+        } else if (bucket.provider === "gcs") {
             const client = bucket.client as Storage;
             const bucketInstance = client.bucket(bucket.bucketName);
             const file = bucketInstance.file(path);
@@ -164,7 +175,10 @@ export async function deleteFile(path: string, bucketName?: string): Promise<voi
         throw new Error(`Bucket ${bucketName || "default"} not initialized`);
     }
 
-    if (bucket.provider === "gcs") {
+    if (bucket.provider === "memory") {
+        const client = bucket.client as MemoryStorage;
+        client.delete(path);
+    } else if (bucket.provider === "gcs") {
         const client = bucket.client as Storage;
         const bucketInstance = client.bucket(bucket.bucketName);
         const file = bucketInstance.file(path);
@@ -234,7 +248,11 @@ export async function moveFile(oldPath: string, newPath: string, bucketName?: st
     }
 
     try {
-        if (bucket.provider === "gcs") {
+        if (bucket.provider === "memory") {
+            const client = bucket.client as MemoryStorage;
+            client.copy(oldPath, newPath);
+            client.delete(oldPath);
+        } else if (bucket.provider === "gcs") {
             const client = bucket.client as Storage;
             const bucketInstance = client.bucket(bucket.bucketName);
             const oldFile = bucketInstance.file(oldPath);
@@ -295,7 +313,10 @@ export async function listFiles(prefix?: string, bucketName?: string): Promise<s
         throw new Error(`Bucket ${bucketName || "default"} not initialized`);
     }
 
-    if (bucket.provider === "gcs") {
+    if (bucket.provider === "memory") {
+        const client = bucket.client as MemoryStorage;
+        return client.list(prefix);
+    } else if (bucket.provider === "gcs") {
         const client = bucket.client as Storage;
         const bucketInstance = client.bucket(bucket.bucketName);
         const [files] = await bucketInstance.getFiles({ prefix: prefix || "" });
@@ -338,7 +359,10 @@ export async function fileExists(path: string, bucketName?: string): Promise<boo
     }
 
     try {
-        if (bucket.provider === "gcs") {
+        if (bucket.provider === "memory") {
+            const client = bucket.client as MemoryStorage;
+            return client.exists(path);
+        } else if (bucket.provider === "gcs") {
             const client = bucket.client as Storage;
             const bucketInstance = client.bucket(bucket.bucketName);
             const file = bucketInstance.file(path);
@@ -381,7 +405,10 @@ export async function checkBucketAuth(bucketName?: string): Promise<boolean> {
         throw new Error(`Bucket ${bucketName || "default"} not initialized`);
     }
     try {
-        if (bucket.provider === "gcs") {
+        if (bucket.provider === "memory") {
+            // Memory provider is always available
+            return true;
+        } else if (bucket.provider === "gcs") {
             const client = bucket.client as Storage;
             const bucketInstance = client.bucket(bucket.bucketName);
             await bucketInstance.getMetadata();

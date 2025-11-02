@@ -18,9 +18,13 @@
 
 // Types
 export type { BucketConfig, BucketInstance, StorageProvider } from "./src/bucketConfig.ts";
+export type { CacheOptions } from "./src/cache.ts";
 
 // Configuration functions
 export { getBucket, initBucket, listBuckets, resetBucket } from "./src/bucketConfig.ts";
 
 // File operations
 export { checkBucketAuth, deleteFile, fileExists, listFiles, moveFile, readFile, writeFile } from "./src/bucketCore.ts";
+
+// Cache operations
+export { clearCache, getCacheStats } from "./src/cache.ts";

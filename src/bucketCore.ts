@@ -1,4 +1,5 @@
 import { getBucket } from "./bucketConfig.ts";
+import { getCache } from "./cache.ts";
 import {
     CopyObjectCommand,
     DeleteObjectCommand,
@@ -52,6 +53,13 @@ export async function writeFile(path: string, content: string | Uint8Array, buck
         });
         await client.send(command);
     }
+
+    // Update cache after successful write
+    const cache = getCache(bucketName);
+    if (cache && bucket.cacheOptions?.enabled && bucket.cacheOptions?.includeWrites !== false) {
+        const cacheKey = `${bucket.bucketName}:${path}`;
+        cache.set(cacheKey, content);
+    }
 }
 
 /**
@@ -80,14 +88,26 @@ export async function readFile(path: string, bucketName?: string): Promise<strin
         throw new Error(`Bucket ${bucketName || "default"} not initialized`);
     }
 
+    const cache = getCache(bucketName);
+    const cacheKey = `${bucket.bucketName}:${path}`;
+
+    // Check cache first if enabled and includes reads
+    if (cache && bucket.cacheOptions?.enabled && bucket.cacheOptions?.includeReads !== false) {
+        const cachedContent = cache.get(cacheKey);
+        if (cachedContent !== null) {
+            return typeof cachedContent === "string" ? cachedContent : new TextDecoder().decode(cachedContent);
+        }
+    }
+
     try {
+        let content: string;
         if (bucket.provider === "gcs") {
             const client = bucket.client as Storage;
             const bucketInstance = client.bucket(bucket.bucketName);
             const file = bucketInstance.file(path);
-            const [content] = await file.download();
+            const [fileContent] = await file.download();
             //const [metadata] = await file.getMetadata();
-            return new TextDecoder().decode(content);
+            content = new TextDecoder().decode(fileContent);
         } else {
             const client = bucket.client as S3Client;
             const command = new GetObjectCommand({
@@ -98,9 +118,15 @@ export async function readFile(path: string, bucketName?: string): Promise<strin
             if (!response.Body) {
                 throw new Error(`File ${path} not found`);
             }
-            const text = await response.Body.transformToString();
-            return text;
+            content = await response.Body.transformToString();
         }
+
+        // Store in cache if enabled
+        if (cache && bucket.cacheOptions?.enabled && bucket.cacheOptions?.includeReads !== false) {
+            cache.set(cacheKey, content);
+        }
+
+        return content;
     } catch (error: unknown) {
         if (error instanceof Error) {
             if (error.name === "NoSuchKey" || error.name === "NotFound") {
@@ -151,6 +177,13 @@ export async function deleteFile(path: string, bucketName?: string): Promise<voi
         });
         await client.send(command);
     }
+
+    // Invalidate cache
+    const cache = getCache(bucketName);
+    if (cache) {
+        const cacheKey = `${bucket.bucketName}:${path}`;
+        cache.delete(cacheKey);
+    }
 }
 
 /**
@@ -187,6 +220,19 @@ export async function moveFile(oldPath: string, newPath: string, bucketName?: st
         throw new Error(`Bucket ${bucketName || "default"} not initialized`);
     }
 
+    const cache = getCache(bucketName);
+    const oldCacheKey = `${bucket.bucketName}:${oldPath}`;
+    const newCacheKey = `${bucket.bucketName}:${newPath}`;
+
+    // Get cached content before move if available
+    let cachedContent: string | Uint8Array | null = null;
+    if (cache) {
+        cachedContent = cache.get(oldCacheKey);
+        // Remove old path and new path from cache (in case new path existed)
+        cache.delete(oldCacheKey);
+        cache.delete(newCacheKey);
+    }
+
     try {
         if (bucket.provider === "gcs") {
             const client = bucket.client as Storage;
@@ -209,6 +255,11 @@ export async function moveFile(oldPath: string, newPath: string, bucketName?: st
                 Key: oldPath,
             });
             await client.send(deleteCommand);
+        }
+
+        // If content was cached, preserve it for new path
+        if (cache && cachedContent !== null && bucket.cacheOptions?.enabled) {
+            cache.set(newCacheKey, cachedContent);
         }
     } catch (error) {
         // Improve error handling

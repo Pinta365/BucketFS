@@ -1,5 +1,7 @@
 import { S3Client } from "@aws-sdk/client-s3";
 import { Storage } from "@google-cloud/storage";
+import { Cache, removeCache, setCache } from "./cache.ts";
+import type { CacheOptions } from "./cache.ts";
 
 /**
  * Supported cloud storage providers.
@@ -93,6 +95,8 @@ export interface BucketConfig {
     projectId?: string;
     /** The credentials for the storage provider */
     credentials: S3Credentials | GCSCredentials;
+    /** Optional cache configuration */
+    cache?: CacheOptions;
 }
 
 /**
@@ -105,6 +109,8 @@ export interface BucketInstance {
     bucketName: string;
     /** The storage provider */
     provider: StorageProvider;
+    /** Cache configuration if enabled */
+    cacheOptions?: CacheOptions;
 }
 
 // Map to store multiple bucket instances
@@ -161,7 +167,17 @@ export function initBucket(config: BucketConfig, name?: string): string {
             }),
             bucketName,
             provider,
+            cacheOptions: config.cache,
         });
+
+        // Initialize cache if enabled
+        if (config.cache?.enabled) {
+            const cache = new Cache(
+                config.cache.maxSize ?? 1000,
+                config.cache.ttl,
+            );
+            setCache(instanceName, cache);
+        }
     } else if (provider === "cf-r2") {
         if (!accountId) {
             throw new Error("Account ID is required for Cloudflare R2 provider");
@@ -180,7 +196,17 @@ export function initBucket(config: BucketConfig, name?: string): string {
             }),
             bucketName,
             provider,
+            cacheOptions: config.cache,
         });
+
+        // Initialize cache if enabled
+        if (config.cache?.enabled) {
+            const cache = new Cache(
+                config.cache.maxSize ?? 1000,
+                config.cache.ttl,
+            );
+            setCache(instanceName, cache);
+        }
     } else if (provider === "gcs") {
         if (!projectId) {
             throw new Error("Project ID is required for Google Cloud Storage provider");
@@ -198,7 +224,17 @@ export function initBucket(config: BucketConfig, name?: string): string {
             }),
             bucketName,
             provider,
+            cacheOptions: config.cache,
         });
+
+        // Initialize cache if enabled
+        if (config.cache?.enabled) {
+            const cache = new Cache(
+                config.cache.maxSize ?? 1000,
+                config.cache.ttl,
+            );
+            setCache(instanceName, cache);
+        }
     } else {
         throw new Error(`Unsupported provider: ${provider}`);
     }
@@ -249,7 +285,11 @@ export function getBucket(name?: string): BucketInstance {
 export function resetBucket(name?: string): void {
     if (name) {
         bucketInstances.delete(name);
+        removeCache(name);
     } else {
+        // Clear all caches before clearing bucket instances
+        const bucketNames = Array.from(bucketInstances.keys());
+        bucketNames.forEach((name) => removeCache(name));
         bucketInstances.clear();
     }
 }

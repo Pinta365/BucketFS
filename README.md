@@ -9,7 +9,8 @@ Can also be used to persist storage in serverless environments (e.g., Deno Deplo
 
 ## Features
 
-- Support for multiple storage providers (Amazon S3, Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces)
+- Support for multiple storage providers (Amazon S3, Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces, Memory)
+- Optional in-memory caching for improved performance
 - Simple and consistent API for file operations
 - TypeScript support with full type definitions
 - Easy provider switching without code changes
@@ -17,7 +18,8 @@ Can also be used to persist storage in serverless environments (e.g., Deno Deplo
 **Important Note on Costs:** Using BucketFS involves interacting with third-party cloud storage providers (Amazon S3,
 Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces). These providers typically charge for storage, data transfer,
 and operations. While most providers offer a free tier, it is the user's responsibility to understand and monitor the
-pricing of their chosen provider to avoid unexpected costs.
+pricing of their chosen provider to avoid unexpected costs. The memory provider has no costs and doesn't require any
+cloud account setup.
 
 ## Installation
 
@@ -105,25 +107,72 @@ await initBucket({
 });
 ```
 
+### Memory Provider
+
+The memory provider stores all data in memory only (no persistence). Perfect for testing, development, or temporary
+storage. No credentials needed!
+
+```typescript
+await initBucket({
+    provider: "memory",
+    bucketName: "my-bucket",
+    // No credentials needed
+});
+```
+
 ## API Reference
 
 ### Configuration
 
 ```typescript
 interface BucketConfig {
-    provider: "aws-s3" | "cf-r2" | "gcs" | "do-spaces";
+    provider: "aws-s3" | "cf-r2" | "gcs" | "do-spaces" | "memory";
     bucketName: string;
     region?: string; // Required for AWS S3 and DigitalOcean Spaces
     accountId?: string; // Required for Cloudflare R2
     projectId?: string; // Required for Google Cloud Storage
-    credentials: {
+    credentials?: {
         accessKeyId: string; // Required for AWS S3, Cloudflare R2, and DigitalOcean Spaces
         secretAccessKey: string; // Required for AWS S3, Cloudflare R2, and DigitalOcean Spaces
         clientEmail?: string; // Required for Google Cloud Storage
         privateKey?: string; // Required for Google Cloud Storage
+    }; // Not required for memory provider
+    cache?: {
+        enabled: boolean;
+        maxSize?: number; // Maximum number of cached entries
+        maxMemorySize?: number; // Maximum memory size in bytes
+        ttl?: number; // Time-to-live in milliseconds
+        includeWrites?: boolean; // Cache write operations (default: true)
+        includeReads?: boolean; // Cache read operations (default: true)
     };
 }
 ```
+
+### Caching
+
+BucketFS supports optional in-memory caching to reduce API calls and improve performance. Caching can be configured per
+bucket:
+
+```typescript
+await initBucket({
+    provider: "aws-s3",
+    bucketName: "my-bucket",
+    region: "us-east-1",
+    credentials: {
+        accessKeyId: "your-access-key",
+        secretAccessKey: "your-secret-key",
+    },
+    cache: {
+        enabled: true,
+        maxSize: 1000, // Cache up to 1000 files
+        maxMemorySize: 50 * 1024 * 1024, // Or limit by memory (50MB)
+        ttl: 3600000, // Cache entries expire after 1 hour
+    },
+});
+```
+
+You can use either `maxSize` (file count limit) or `maxMemorySize` (memory limit in bytes), or both. If both are set,
+either limit can trigger cache eviction.
 
 ### Core Functions
 
@@ -184,9 +233,25 @@ Check if a file exists at the specified `path` in the bucket. Returns `true` if 
 Throws an error if the check operation fails (other than the file not being found). An optional `bucketName` can be
 provided to check within a specific initialized bucket instance.
 
+### Cache Management
+
+#### `clearCache(bucketName?: string): void`
+
+Clear cache for a specific bucket or all buckets. If `bucketName` is provided, clears cache for that bucket only.
+Otherwise, clears cache for all buckets.
+
+#### `getCacheStats(bucketName?: string): { size: number; maxSize: number | undefined; memorySize: number; maxMemorySize: number | undefined; } | null`
+
+Get cache statistics for a bucket. Returns `null` if caching is not enabled or bucket doesn't exist.
+
 ## Examples
 
-See the `/examples`-folder.
+See the `/examples`-folder for complete examples, including:
+
+- Basic usage (`basic_example.ts`)
+- Caching features (`cache_example.ts`)
+- Memory provider (`memory_example.ts`)
+- Multi-bucket operations (`backup_job.ts`)
 
 ## Contributing
 

@@ -11,7 +11,7 @@ async function main() {
     console.log("=== Memory Bucket Provider Demo ===\n");
 
     // Initialize memory bucket - no credentials needed!
-    initBucket({
+    await initBucket({
         provider: "memory",
         bucketName: "test-bucket",
     });

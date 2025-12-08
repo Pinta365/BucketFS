@@ -17,7 +17,7 @@ import { fileExists, initBucket, moveFile, writeFile } from "../mod.ts";
 async function main() {
     // Initialize with Google Cloud Storage
     // You can swap this with any other provider config supported by BucketFS
-    initBucket({
+    await initBucket({
         provider: "cf-r2",
         bucketName: requireEnv("R2_BUCKET_NAME"),
         accountId: requireEnv("R2_ACCOUNT_ID"),

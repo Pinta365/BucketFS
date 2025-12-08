@@ -16,7 +16,7 @@ async function main() {
     try {
         // Initialize S3 instance
         console.log("Initializing S3 connection...");
-        initBucket({
+        await initBucket({
             provider: "aws-s3",
             bucketName: requireEnv("S3_BUCKET_NAME"),
             region: requireEnv("S3_REGION"),
@@ -48,7 +48,7 @@ async function main() {
 
         // Initialize R2 instance
         console.log("Initializing R2 connection...");
-        initBucket({
+        await initBucket({
             provider: "cf-r2",
             bucketName: requireEnv("R2_BUCKET_NAME"),
             accountId: requireEnv("R2_ACCOUNT_ID"),

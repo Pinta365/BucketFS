@@ -15,7 +15,7 @@ import { clearCache, fileExists, getCacheStats, initBucket, listFiles, readFile,
 
 async function main() {
     // Initialize with Google Cloud Storage - with caching enabled
-    initBucket({
+    await initBucket({
         provider: "gcs",
         bucketName: requireEnv("GCS_BUCKET_NAME"),
         projectId: requireEnv("GCS_PROJECT_ID"),
@@ -35,7 +35,7 @@ async function main() {
     // You can also enable caching for other providers:
 
     // Initialize BucketFS with AWS S3 (with caching)
-    initBucket({
+    await initBucket({
         provider: "aws-s3",
         bucketName: requireEnv("S3_BUCKET_NAME"),
         region: requireEnv("S3_REGION"),
@@ -51,7 +51,7 @@ async function main() {
     });
 
     // Initialize with Cloudflare R2 (with caching)
-    initBucket({
+    await initBucket({
         provider: "cf-r2",
         bucketName: requireEnv("R2_BUCKET_NAME"),
         accountId: requireEnv("R2_ACCOUNT_ID"),

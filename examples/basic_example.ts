@@ -15,7 +15,7 @@ import { deleteFile, fileExists, initBucket, listFiles, readFile, writeFile } fr
 
 async function main() {
     // Initialize with Google Cloud Storage
-    initBucket({
+    await initBucket({
         provider: "gcs",
         bucketName: requireEnv("GCS_BUCKET_NAME"),
         projectId: requireEnv("GCS_PROJECT_ID"),
@@ -26,7 +26,7 @@ async function main() {
     });
     /*
     // Initialize BucketFS with AWS S3
-    initBucket({
+    await initBucket({
         provider: "aws-s3",
         bucketName: requireEnv("S3_BUCKET_NAME"),
         region: requireEnv("S3_REGION"),
@@ -37,7 +37,7 @@ async function main() {
     });
 
     // Initialize with Cloudflare R2
-    initBucket({
+    await initBucket({
         provider: "cf-r2",
         bucketName: requireEnv("R2_BUCKET_NAME"),
         accountId: requireEnv("R2_ACCOUNT_ID"),
@@ -48,7 +48,7 @@ async function main() {
     });
 
     // Initialize with Google Cloud Storage
-    initBucket({
+    await initBucket({
         provider: "gcs",
         bucketName: requireEnv("GCS_BUCKET_NAME"),
         projectId: requireEnv("GCS_PROJECT_ID"),
@@ -59,7 +59,7 @@ async function main() {
     });
 
     // Initialize with DigitalOcean Spaces
-    initBucket({
+    await initBucket({
         provider: "do-spaces",
         bucketName: requireEnv("DO_SPACES_BUCKET_NAME"),
         region: requireEnv("DO_SPACES_REGION"),

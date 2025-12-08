@@ -41,8 +41,8 @@ async function copyFilesToR2() {
     console.log("Starting backup process...");
 
     // Initialize both buckets
-    initBucket(sourceConfig, "source");
-    initBucket(backupConfig, "backup");
+    await initBucket(sourceConfig, "source");
+    await initBucket(backupConfig, "backup");
 
     // List files in source directory
     const files = await listFiles("copy_job/", "source");

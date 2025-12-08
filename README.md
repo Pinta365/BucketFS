@@ -9,7 +9,7 @@ Can also be used to persist storage in serverless environments (e.g., Deno Deplo
 
 ## Features
 
-- Support for multiple storage providers (Amazon S3, Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces, Memory)
+- Support for multiple storage providers (Amazon S3, Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces, Memory, Local Filesystem)
 - Optional in-memory caching for improved performance
 - Simple and consistent API for file operations
 - TypeScript support with full type definitions
@@ -18,8 +18,8 @@ Can also be used to persist storage in serverless environments (e.g., Deno Deplo
 **Important Note on Costs:** Using BucketFS involves interacting with third-party cloud storage providers (Amazon S3,
 Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces). These providers typically charge for storage, data transfer,
 and operations. While most providers offer a free tier, it is the user's responsibility to understand and monitor the
-pricing of their chosen provider to avoid unexpected costs. The memory provider has no costs and doesn't require any
-cloud account setup.
+pricing of their chosen provider to avoid unexpected costs. The memory and filesystem providers have no costs and don't
+require any cloud account setup.
 
 ## Installation
 
@@ -120,23 +120,39 @@ await initBucket({
 });
 ```
 
+### Filesystem Provider
+
+The filesystem provider stores files on the local filesystem. Perfect for local development, testing, or when you need
+persistent storage without cloud services. Uses `@cross/fs` for cross-runtime compatibility (Deno, Node.js, Bun). No
+credentials needed!
+
+```typescript
+await initBucket({
+    provider: "fs",
+    bucketName: "my-bucket",
+    rootDirectory: "/path/to/storage", // Required: root directory for file storage
+    // No credentials needed
+});
+```
+
 ## API Reference
 
 ### Configuration
 
 ```typescript
 interface BucketConfig {
-    provider: "aws-s3" | "cf-r2" | "gcs" | "do-spaces" | "memory";
+    provider: "aws-s3" | "cf-r2" | "gcs" | "do-spaces" | "memory" | "fs";
     bucketName: string;
     region?: string; // Required for AWS S3 and DigitalOcean Spaces
     accountId?: string; // Required for Cloudflare R2
     projectId?: string; // Required for Google Cloud Storage
+    rootDirectory?: string; // Required for filesystem provider
     credentials?: {
         accessKeyId: string; // Required for AWS S3, Cloudflare R2, and DigitalOcean Spaces
         secretAccessKey: string; // Required for AWS S3, Cloudflare R2, and DigitalOcean Spaces
         clientEmail?: string; // Required for Google Cloud Storage
         privateKey?: string; // Required for Google Cloud Storage
-    }; // Not required for memory provider
+    }; // Not required for memory or fs provider
     cache?: {
         enabled: boolean;
         maxSize?: number; // Maximum number of cached entries
@@ -176,10 +192,12 @@ either limit can trigger cache eviction.
 
 ### Core Functions
 
-#### `initBucket(config: BucketConfig, name?: string): string`
+#### `initBucket(config: BucketConfig, name?: string): Promise<string>`
 
 Initialize a bucket with the specified configuration. Optionally provides a custom `name` for the bucket instance,
 allowing you to manage multiple buckets simultaneously. Returns the name of the initialized bucket instance.
+Dependencies are loaded dynamically only when needed, so using memory or filesystem providers won't load cloud
+storage dependencies.
 
 #### `getBucket(name?: string): BucketInstance`
 
@@ -207,6 +225,13 @@ optional `bucketName` can be provided to write to a specific initialized bucket 
 Read content from a file at the specified `path` in the bucket. Returns the file content as a string. Returns `null` if
 the file does not exist at the given path. Throws an error for other read operation failures. An optional `bucketName`
 can be provided to read from a specific initialized bucket instance.
+
+#### `readBuffer(path: string, bucketName?: string): Promise<Uint8Array | null>`
+
+Read content from a file at the specified `path` in the bucket as binary data. Returns the file content as a `Uint8Array`.
+Returns `null` if the file does not exist at the given path. Throws an error for other read operation failures. This is
+useful for reading binary files (images, videos, etc.) without UTF-8 decoding. An optional `bucketName` can be provided
+to read from a specific initialized bucket instance.
 
 #### `deleteFile(path: string, bucketName?: string): Promise<void>`
 

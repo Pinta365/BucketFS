@@ -1,17 +1,35 @@
 import { getBucket } from "./bucketConfig.ts";
 import { getCache } from "./cache.ts";
 import type { MemoryStorage } from "./memoryStorage.ts";
-import {
-    CopyObjectCommand,
-    DeleteObjectCommand,
-    GetObjectCommand,
-    HeadBucketCommand,
-    HeadObjectCommand,
-    ListObjectsV2Command,
-    PutObjectCommand,
-} from "@aws-sdk/client-s3";
+import type { FSStorage } from "./fsStorage.ts";
 import type { _Object, S3Client } from "@aws-sdk/client-s3";
 import type { Storage } from "@google-cloud/storage";
+
+let s3CommandsCache: {
+    CopyObjectCommand: typeof import("@aws-sdk/client-s3").CopyObjectCommand;
+    DeleteObjectCommand: typeof import("@aws-sdk/client-s3").DeleteObjectCommand;
+    GetObjectCommand: typeof import("@aws-sdk/client-s3").GetObjectCommand;
+    HeadBucketCommand: typeof import("@aws-sdk/client-s3").HeadBucketCommand;
+    HeadObjectCommand: typeof import("@aws-sdk/client-s3").HeadObjectCommand;
+    ListObjectsV2Command: typeof import("@aws-sdk/client-s3").ListObjectsV2Command;
+    PutObjectCommand: typeof import("@aws-sdk/client-s3").PutObjectCommand;
+} | null = null;
+
+async function getS3Commands() {
+    if (!s3CommandsCache) {
+        const s3Module = await import("@aws-sdk/client-s3");
+        s3CommandsCache = {
+            CopyObjectCommand: s3Module.CopyObjectCommand,
+            DeleteObjectCommand: s3Module.DeleteObjectCommand,
+            GetObjectCommand: s3Module.GetObjectCommand,
+            HeadBucketCommand: s3Module.HeadBucketCommand,
+            HeadObjectCommand: s3Module.HeadObjectCommand,
+            ListObjectsV2Command: s3Module.ListObjectsV2Command,
+            PutObjectCommand: s3Module.PutObjectCommand,
+        };
+    }
+    return s3CommandsCache;
+}
 
 /**
  * Write content to a file in the bucket.
@@ -43,6 +61,9 @@ export async function writeFile(path: string, content: string | Uint8Array, buck
     if (bucket.provider === "memory") {
         const client = bucket.client as MemoryStorage;
         client.write(path, content);
+    } else if (bucket.provider === "fs") {
+        const client = bucket.client as FSStorage;
+        await client.write(path, content);
     } else if (bucket.provider === "gcs") {
         const client = bucket.client as Storage;
         const bucketInstance = client.bucket(bucket.bucketName);
@@ -50,6 +71,7 @@ export async function writeFile(path: string, content: string | Uint8Array, buck
         await file.save(content);
     } else {
         const client = bucket.client as S3Client;
+        const { PutObjectCommand } = await getS3Commands();
         const command = new PutObjectCommand({
             Bucket: bucket.bucketName,
             Key: path,
@@ -112,6 +134,13 @@ export async function readFile(path: string, bucketName?: string): Promise<strin
                 return null;
             }
             content = new TextDecoder().decode(fileContent);
+        } else if (bucket.provider === "fs") {
+            const client = bucket.client as FSStorage;
+            const fileContent = await client.read(path);
+            if (!fileContent) {
+                return null;
+            }
+            content = new TextDecoder().decode(fileContent);
         } else if (bucket.provider === "gcs") {
             const client = bucket.client as Storage;
             const bucketInstance = client.bucket(bucket.bucketName);
@@ -121,6 +150,7 @@ export async function readFile(path: string, bucketName?: string): Promise<strin
             content = new TextDecoder().decode(fileContent);
         } else {
             const client = bucket.client as S3Client;
+            const { GetObjectCommand } = await getS3Commands();
             const command = new GetObjectCommand({
                 Bucket: bucket.bucketName,
                 Key: path,
@@ -133,6 +163,102 @@ export async function readFile(path: string, bucketName?: string): Promise<strin
         }
 
         // Store in cache if enabled
+        if (cache && bucket.cacheOptions?.enabled && bucket.cacheOptions?.includeReads !== false) {
+            cache.set(cacheKey, content);
+        }
+
+        return content;
+    } catch (error: unknown) {
+        if (error instanceof Error) {
+            if (error.name === "NoSuchKey" || error.name === "NotFound") {
+                return null;
+            }
+            if ("code" in error && typeof error.code === "number" && error.code === 404) {
+                return null;
+            }
+            throw error;
+        }
+        const errorMessage = String(error);
+        throw new Error(`An unexpected non-Error value was thrown during file read: ${errorMessage}`);
+    }
+}
+
+/**
+ * Read content from a file in the bucket as binary data.
+ *
+ * @param path Path to the file
+ * @param bucketName Optional name of the bucket instance to use
+ * @returns File content as Uint8Array, or null if the file doesn't exist
+ * @throws Error if the bucket is not initialized or if the read operation fails
+ *
+ * @example
+ * ```ts
+ * // Read a binary file
+ * const buffer = await readBuffer("image.png");
+ * if (buffer !== null) {
+ *   // Work with Uint8Array directly
+ *   console.log(buffer.length);
+ * }
+ *
+ * // Read from a specific bucket
+ * const buffer = await readBuffer("image.png", "my-custom-bucket");
+ * ```
+ */
+export async function readBuffer(path: string, bucketName?: string): Promise<Uint8Array | null> {
+    const bucket = getBucket(bucketName);
+    if (!bucket) {
+        throw new Error(`Bucket ${bucketName || "default"} not initialized`);
+    }
+
+    const cache = getCache(bucketName);
+    const cacheKey = `${bucket.bucketName}:${path}`;
+
+    if (cache && bucket.cacheOptions?.enabled && bucket.cacheOptions?.includeReads !== false) {
+        const cachedContent = cache.get(cacheKey);
+        if (cachedContent !== null) {
+            if (typeof cachedContent === "string") {
+                return new TextEncoder().encode(cachedContent);
+            }
+            return cachedContent;
+        }
+    }
+
+    try {
+        let content: Uint8Array;
+        if (bucket.provider === "memory") {
+            const client = bucket.client as MemoryStorage;
+            const fileContent = client.read(path);
+            if (!fileContent) {
+                return null;
+            }
+            content = fileContent;
+        } else if (bucket.provider === "fs") {
+            const client = bucket.client as FSStorage;
+            const fileContent = await client.read(path);
+            if (!fileContent) {
+                return null;
+            }
+            content = fileContent;
+        } else if (bucket.provider === "gcs") {
+            const client = bucket.client as Storage;
+            const bucketInstance = client.bucket(bucket.bucketName);
+            const file = bucketInstance.file(path);
+            const [fileContent] = await file.download();
+            content = fileContent;
+        } else {
+            const client = bucket.client as S3Client;
+            const { GetObjectCommand } = await getS3Commands();
+            const command = new GetObjectCommand({
+                Bucket: bucket.bucketName,
+                Key: path,
+            });
+            const response = await client.send(command);
+            if (!response.Body) {
+                throw new Error(`File ${path} not found`);
+            }
+            content = await response.Body.transformToByteArray();
+        }
+
         if (cache && bucket.cacheOptions?.enabled && bucket.cacheOptions?.includeReads !== false) {
             cache.set(cacheKey, content);
         }
@@ -178,6 +304,9 @@ export async function deleteFile(path: string, bucketName?: string): Promise<voi
     if (bucket.provider === "memory") {
         const client = bucket.client as MemoryStorage;
         client.delete(path);
+    } else if (bucket.provider === "fs") {
+        const client = bucket.client as FSStorage;
+        await client.delete(path);
     } else if (bucket.provider === "gcs") {
         const client = bucket.client as Storage;
         const bucketInstance = client.bucket(bucket.bucketName);
@@ -185,6 +314,7 @@ export async function deleteFile(path: string, bucketName?: string): Promise<voi
         await file.delete();
     } else {
         const client = bucket.client as S3Client;
+        const { DeleteObjectCommand } = await getS3Commands();
         const command = new DeleteObjectCommand({
             Bucket: bucket.bucketName,
             Key: path,
@@ -252,6 +382,10 @@ export async function moveFile(oldPath: string, newPath: string, bucketName?: st
             const client = bucket.client as MemoryStorage;
             client.copy(oldPath, newPath);
             client.delete(oldPath);
+        } else if (bucket.provider === "fs") {
+            const client = bucket.client as FSStorage;
+            await client.copy(oldPath, newPath);
+            await client.delete(oldPath);
         } else if (bucket.provider === "gcs") {
             const client = bucket.client as Storage;
             const bucketInstance = client.bucket(bucket.bucketName);
@@ -262,6 +396,7 @@ export async function moveFile(oldPath: string, newPath: string, bucketName?: st
             await oldFile.delete();
         } else {
             const client = bucket.client as S3Client;
+            const { CopyObjectCommand, DeleteObjectCommand } = await getS3Commands();
             const copyCommand = new CopyObjectCommand({
                 Bucket: bucket.bucketName,
                 CopySource: `${bucket.bucketName}/${oldPath}`,
@@ -316,6 +451,9 @@ export async function listFiles(prefix?: string, bucketName?: string): Promise<s
     if (bucket.provider === "memory") {
         const client = bucket.client as MemoryStorage;
         return client.list(prefix);
+    } else if (bucket.provider === "fs") {
+        const client = bucket.client as FSStorage;
+        return await client.list(prefix);
     } else if (bucket.provider === "gcs") {
         const client = bucket.client as Storage;
         const bucketInstance = client.bucket(bucket.bucketName);
@@ -323,6 +461,7 @@ export async function listFiles(prefix?: string, bucketName?: string): Promise<s
         return files.map((file) => file.name);
     } else {
         const client = bucket.client as S3Client;
+        const { ListObjectsV2Command } = await getS3Commands();
         const command = new ListObjectsV2Command({
             Bucket: bucket.bucketName,
             Prefix: prefix || "",
@@ -362,6 +501,9 @@ export async function fileExists(path: string, bucketName?: string): Promise<boo
         if (bucket.provider === "memory") {
             const client = bucket.client as MemoryStorage;
             return client.exists(path);
+        } else if (bucket.provider === "fs") {
+            const client = bucket.client as FSStorage;
+            return await client.exists(path);
         } else if (bucket.provider === "gcs") {
             const client = bucket.client as Storage;
             const bucketInstance = client.bucket(bucket.bucketName);
@@ -370,6 +512,7 @@ export async function fileExists(path: string, bucketName?: string): Promise<boo
             return exists;
         } else {
             const client = bucket.client as S3Client;
+            const { HeadObjectCommand } = await getS3Commands();
             const command = new HeadObjectCommand({
                 Bucket: bucket.bucketName,
                 Key: path,
@@ -408,6 +551,12 @@ export async function checkBucketAuth(bucketName?: string): Promise<boolean> {
         if (bucket.provider === "memory") {
             // Memory provider is always available
             return true;
+        } else if (bucket.provider === "fs") {
+            // For fs provider, check if root directory exists and is accessible
+            const client = bucket.client as FSStorage;
+            const { exists, isDir } = await import("@cross/fs/stat");
+            const rootPath = client.root;
+            return (await exists(rootPath)) && (await isDir(rootPath));
         } else if (bucket.provider === "gcs") {
             const client = bucket.client as Storage;
             const bucketInstance = client.bucket(bucket.bucketName);
@@ -416,19 +565,24 @@ export async function checkBucketAuth(bucketName?: string): Promise<boolean> {
         } else {
             // S3, R2, Spaces
             const client = bucket.client as S3Client;
+            const { HeadBucketCommand } = await getS3Commands();
             const command = new HeadBucketCommand({ Bucket: bucket.bucketName });
             await client.send(command);
             return true;
         }
     } catch (error) {
-        if (error && typeof error === "object" && "name" in error && (error as any).name === "Forbidden") {
-            return false;
-        }
-        if (
-            error && typeof error === "object" && "$metadata" in error &&
-            (error as any).$metadata?.httpStatusCode === 403
-        ) {
-            return false;
+        if (error && typeof error === "object") {
+            // Check for Forbidden error by name
+            if ("name" in error && error.name === "Forbidden") {
+                return false;
+            }
+            // Check for AWS SDK error with 403 status code
+            if ("$metadata" in error && typeof error.$metadata === "object" && error.$metadata !== null) {
+                const metadata = error.$metadata as { httpStatusCode?: number };
+                if (metadata.httpStatusCode === 403) {
+                    return false;
+                }
+            }
         }
         return false;
     }

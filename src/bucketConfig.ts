@@ -1,8 +1,9 @@
-import { S3Client } from "@aws-sdk/client-s3";
-import { Storage } from "@google-cloud/storage";
+import type { S3Client } from "@aws-sdk/client-s3";
+import type { Storage } from "@google-cloud/storage";
 import { Cache, removeCache, setCache } from "./cache.ts";
 import type { CacheOptions } from "./cache.ts";
 import { MemoryStorage } from "./memoryStorage.ts";
+import { FSStorage } from "./fsStorage.ts";
 
 /**
  * Supported cloud storage providers.
@@ -11,8 +12,9 @@ import { MemoryStorage } from "./memoryStorage.ts";
  * - `gcs`: Google Cloud Storage
  * - `do-spaces`: DigitalOcean Spaces
  * - `memory`: In-memory only storage (no persistence, useful for testing)
+ * - `fs`: Local filesystem storage (cross-runtime compatible)
  */
-export type StorageProvider = "aws-s3" | "cf-r2" | "gcs" | "do-spaces" | "memory";
+export type StorageProvider = "aws-s3" | "cf-r2" | "gcs" | "do-spaces" | "memory" | "fs";
 
 /**
  * Credentials for S3-compatible storage providers (ex. S3, R2 and spaces).
@@ -89,6 +91,14 @@ interface GCSCredentials {
  *   bucketName: "my-bucket"
  *   // No credentials needed
  * };
+ *
+ * // Filesystem provider (local filesystem storage)
+ * const fsConfig: BucketConfig = {
+ *   provider: "fs",
+ *   bucketName: "my-bucket",
+ *   rootDirectory: "/path/to/storage"
+ *   // No credentials needed
+ * };
  * ```
  */
 export interface BucketConfig {
@@ -102,7 +112,9 @@ export interface BucketConfig {
     accountId?: string;
     /** The project ID for GCS provider (required for GCS) */
     projectId?: string;
-    /** The credentials for the storage provider (not required for memory provider) */
+    /** The root directory for filesystem provider (required for fs provider) */
+    rootDirectory?: string;
+    /** The credentials for the storage provider (not required for memory or fs provider) */
     credentials?: S3Credentials | GCSCredentials;
     /** Optional cache configuration */
     cache?: CacheOptions;
@@ -113,7 +125,7 @@ export interface BucketConfig {
  */
 export interface BucketInstance {
     /** The storage client instance */
-    client: S3Client | Storage | MemoryStorage;
+    client: S3Client | Storage | MemoryStorage | FSStorage;
     /** The name of the bucket */
     bucketName: string;
     /** The storage provider */
@@ -136,7 +148,7 @@ const bucketInstances = new Map<string, BucketInstance>();
  * @example
  * ```ts
  * // Initialize an S3 bucket
- * const bucketName = initBucket({
+ * const bucketName = await initBucket({
  *   provider: "aws-s3",
  *   bucketName: "my-bucket",
  *   region: "us-east-1",
@@ -147,14 +159,14 @@ const bucketInstances = new Map<string, BucketInstance>();
  * });
  *
  * // Initialize with a custom name
- * const customName = initBucket(config, "my-custom-name");
+ * const customName = await initBucket(config, "my-custom-name");
  * ```
  */
-export function initBucket(config: BucketConfig, name?: string): string {
-    const { provider, bucketName, region, accountId, projectId, credentials } = config;
+export async function initBucket(config: BucketConfig, name?: string): Promise<string> {
+    const { provider, bucketName, region, accountId, projectId, credentials, rootDirectory } = config;
     const instanceName = name || bucketName;
 
-    if (provider !== "memory" && !credentials) {
+    if (provider !== "memory" && provider !== "fs" && !credentials) {
         throw new Error("Credentials are required");
     }
 
@@ -165,6 +177,7 @@ export function initBucket(config: BucketConfig, name?: string): string {
         if (!(credentials as S3Credentials).accessKeyId || !(credentials as S3Credentials).secretAccessKey) {
             throw new Error("Access key and secret key are required for AWS S3/Spaces provider");
         }
+        const { S3Client } = await import("@aws-sdk/client-s3");
         bucketInstances.set(instanceName, {
             client: new S3Client({
                 region,
@@ -195,6 +208,7 @@ export function initBucket(config: BucketConfig, name?: string): string {
         if (!(credentials as S3Credentials).accessKeyId || !(credentials as S3Credentials).secretAccessKey) {
             throw new Error("Access key and secret key are required for Cloudflare R2 provider");
         }
+        const { S3Client } = await import("@aws-sdk/client-s3");
         bucketInstances.set(instanceName, {
             client: new S3Client({
                 region: "auto",
@@ -225,6 +239,7 @@ export function initBucket(config: BucketConfig, name?: string): string {
         if (!(credentials as GCSCredentials).clientEmail || !(credentials as GCSCredentials).privateKey) {
             throw new Error("Client email and private key are required for Google Cloud Storage provider");
         }
+        const { Storage } = await import("@google-cloud/storage");
         bucketInstances.set(instanceName, {
             client: new Storage({
                 projectId,
@@ -258,6 +273,27 @@ export function initBucket(config: BucketConfig, name?: string): string {
 
         // Note: Caching is typically not needed for memory provider since it's already in memory
         // But we support it for consistency
+        if (config.cache?.enabled) {
+            const cache = new Cache(
+                config.cache.maxSize ?? 1000,
+                config.cache.maxMemorySize,
+                config.cache.ttl,
+            );
+            setCache(instanceName, cache);
+        }
+    } else if (provider === "fs") {
+        // Filesystem storage - requires rootDirectory
+        if (!rootDirectory) {
+            throw new Error("Root directory is required for filesystem provider");
+        }
+        bucketInstances.set(instanceName, {
+            client: new FSStorage(rootDirectory),
+            bucketName,
+            provider,
+            cacheOptions: config.cache,
+        });
+
+        // Initialize cache if enabled
         if (config.cache?.enabled) {
             const cache = new Cache(
                 config.cache.maxSize ?? 1000,

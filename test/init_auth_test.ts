@@ -22,7 +22,7 @@ Deno.test({
     name: "BucketFS initBucket and authentication: Google Cloud Storage",
     ignore: !TEST_GCS,
     async fn() {
-        initBucket({
+        await initBucket({
             provider: "gcs",
             bucketName: requireEnv("GCS_BUCKET_NAME"),
             projectId: requireEnv("GCS_PROJECT_ID"),
@@ -41,7 +41,7 @@ Deno.test({
     name: "BucketFS initBucket and authentication: AWS S3",
     ignore: !TEST_S3,
     async fn() {
-        initBucket({
+        await initBucket({
             provider: "aws-s3",
             bucketName: requireEnv("S3_BUCKET_NAME"),
             region: requireEnv("S3_REGION"),
@@ -60,7 +60,7 @@ Deno.test({
     name: "BucketFS initBucket and authentication: Cloudflare R2",
     ignore: !TEST_R2,
     async fn() {
-        initBucket({
+        await initBucket({
             provider: "cf-r2",
             bucketName: requireEnv("R2_BUCKET_NAME"),
             accountId: requireEnv("R2_ACCOUNT_ID"),
@@ -79,7 +79,7 @@ Deno.test({
     name: "BucketFS initBucket and authentication: DigitalOcean Spaces",
     ignore: !TEST_DO,
     async fn() {
-        initBucket({
+        await initBucket({
             provider: "do-spaces",
             bucketName: requireEnv("DO_SPACES_BUCKET_NAME"),
             region: requireEnv("DO_SPACES_REGION"),

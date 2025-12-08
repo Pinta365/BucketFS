@@ -1,7 +1,5 @@
 /**
  * Test file for the local filesystem (fs) provider.
- *
- *
  */
 import { assertEquals, assertExists } from "@std/assert";
 import { mktempdir } from "@cross/fs/ops";
@@ -162,4 +160,3 @@ Deno.test({
         }
     },
 });
-

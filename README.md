@@ -9,7 +9,8 @@ Can also be used to persist storage in serverless environments (e.g., Deno Deplo
 
 ## Features
 
-- Support for multiple storage providers (Amazon S3, Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces, Memory, Local Filesystem)
+- Support for multiple storage providers (Amazon S3, Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces, Memory,
+  Local Filesystem)
 - Optional in-memory caching for improved performance
 - Simple and consistent API for file operations
 - TypeScript support with full type definitions
@@ -196,8 +197,8 @@ either limit can trigger cache eviction.
 
 Initialize a bucket with the specified configuration. Optionally provides a custom `name` for the bucket instance,
 allowing you to manage multiple buckets simultaneously. Returns the name of the initialized bucket instance.
-Dependencies are loaded dynamically only when needed, so using memory or filesystem providers won't load cloud
-storage dependencies.
+Dependencies are loaded dynamically only when needed, so using memory or filesystem providers won't load cloud storage
+dependencies.
 
 #### `getBucket(name?: string): BucketInstance`
 
@@ -228,10 +229,10 @@ can be provided to read from a specific initialized bucket instance.
 
 #### `readBuffer(path: string, bucketName?: string): Promise<Uint8Array | null>`
 
-Read content from a file at the specified `path` in the bucket as binary data. Returns the file content as a `Uint8Array`.
-Returns `null` if the file does not exist at the given path. Throws an error for other read operation failures. This is
-useful for reading binary files (images, videos, etc.) without UTF-8 decoding. An optional `bucketName` can be provided
-to read from a specific initialized bucket instance.
+Read content from a file at the specified `path` in the bucket as binary data. Returns the file content as a
+`Uint8Array`. Returns `null` if the file does not exist at the given path. Throws an error for other read operation
+failures. This is useful for reading binary files (images, videos, etc.) without UTF-8 decoding. An optional
+`bucketName` can be provided to read from a specific initialized bucket instance.
 
 #### `deleteFile(path: string, bucketName?: string): Promise<void>`
 

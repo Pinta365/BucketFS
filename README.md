@@ -11,6 +11,7 @@ Can also be used to persist storage in serverless environments (e.g., Deno Deplo
 
 - Support for multiple storage providers (Amazon S3, Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces, Memory,
   Local Filesystem)
+- Plugin-based architecture with lazy loading - dependencies are only loaded when needed
 - Optional in-memory caching for improved performance
 - Simple and consistent API for file operations
 - TypeScript support with full type definitions
@@ -197,8 +198,10 @@ either limit can trigger cache eviction.
 
 Initialize a bucket with the specified configuration. Optionally provides a custom `name` for the bucket instance,
 allowing you to manage multiple buckets simultaneously. Returns the name of the initialized bucket instance.
-Dependencies are loaded dynamically only when needed, so using memory or filesystem providers won't load cloud storage
-dependencies.
+
+BucketFS uses a plugin-based architecture where each storage provider is implemented as an isolated plugin. Plugins are
+lazy-loaded only when their provider is used, ensuring dependencies aren't loaded unless needed. For example, using the
+memory or filesystem providers won't load cloud storage SDK dependencies.
 
 #### `getBucket(name?: string): BucketInstance`
 
@@ -278,6 +281,18 @@ See the `/examples`-folder for complete examples, including:
 - Caching features (`cache_example.ts`)
 - Memory provider (`memory_example.ts`)
 - Multi-bucket operations (`backup_job.ts`)
+
+## Plugin System
+
+BucketFS uses a plugin-based architecture where each storage provider is implemented as an isolated plugin. This design
+ensures:
+
+- **Lazy Loading**: Dependencies are only loaded when a specific provider is used
+- **Isolated Dependencies**: Each plugin manages its own dependencies
+- **Easy Extension**: Adding new providers is straightforward
+
+Want to add support for a new storage provider? See [PLUGINS.md](./PLUGINS.md) for a complete guide on creating custom
+plugins.
 
 ## Contributing
 

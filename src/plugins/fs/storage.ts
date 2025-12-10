@@ -92,7 +92,7 @@ export class FSStorage {
      */
     async exists(path: string): Promise<boolean> {
         const fullPath = this.getFullPath(path);
-        return await exists(fullPath) && (await isFile(fullPath));
+        return (await exists(fullPath)) && (await isFile(fullPath));
     }
 
     /**

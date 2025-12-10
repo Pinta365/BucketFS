@@ -1,35 +1,5 @@
 import { getBucket } from "./bucketConfig.ts";
 import { getCache } from "./cache.ts";
-import type { MemoryStorage } from "./memoryStorage.ts";
-import type { FSStorage } from "./fsStorage.ts";
-import type { _Object, S3Client } from "@aws-sdk/client-s3";
-import type { Storage } from "@google-cloud/storage";
-
-let s3CommandsCache: {
-    CopyObjectCommand: typeof import("@aws-sdk/client-s3").CopyObjectCommand;
-    DeleteObjectCommand: typeof import("@aws-sdk/client-s3").DeleteObjectCommand;
-    GetObjectCommand: typeof import("@aws-sdk/client-s3").GetObjectCommand;
-    HeadBucketCommand: typeof import("@aws-sdk/client-s3").HeadBucketCommand;
-    HeadObjectCommand: typeof import("@aws-sdk/client-s3").HeadObjectCommand;
-    ListObjectsV2Command: typeof import("@aws-sdk/client-s3").ListObjectsV2Command;
-    PutObjectCommand: typeof import("@aws-sdk/client-s3").PutObjectCommand;
-} | null = null;
-
-async function getS3Commands() {
-    if (!s3CommandsCache) {
-        const s3Module = await import("@aws-sdk/client-s3");
-        s3CommandsCache = {
-            CopyObjectCommand: s3Module.CopyObjectCommand,
-            DeleteObjectCommand: s3Module.DeleteObjectCommand,
-            GetObjectCommand: s3Module.GetObjectCommand,
-            HeadBucketCommand: s3Module.HeadBucketCommand,
-            HeadObjectCommand: s3Module.HeadObjectCommand,
-            ListObjectsV2Command: s3Module.ListObjectsV2Command,
-            PutObjectCommand: s3Module.PutObjectCommand,
-        };
-    }
-    return s3CommandsCache;
-}
 
 /**
  * Write content to a file in the bucket.
@@ -58,29 +28,8 @@ export async function writeFile(path: string, content: string | Uint8Array, buck
         throw new Error(`Bucket ${bucketName || "default"} not initialized`);
     }
 
-    if (bucket.provider === "memory") {
-        const client = bucket.client as MemoryStorage;
-        client.write(path, content);
-    } else if (bucket.provider === "fs") {
-        const client = bucket.client as FSStorage;
-        await client.write(path, content);
-    } else if (bucket.provider === "gcs") {
-        const client = bucket.client as Storage;
-        const bucketInstance = client.bucket(bucket.bucketName);
-        const file = bucketInstance.file(path);
-        await file.save(content);
-    } else {
-        const client = bucket.client as S3Client;
-        const { PutObjectCommand } = await getS3Commands();
-        const command = new PutObjectCommand({
-            Bucket: bucket.bucketName,
-            Key: path,
-            Body: content,
-        });
-        await client.send(command);
-    }
+    await bucket.plugin.write(bucket.bucketName, path, content);
 
-    // Update cache after successful write
     const cache = getCache(bucketName);
     if (cache && bucket.cacheOptions?.enabled && bucket.cacheOptions?.includeWrites !== false) {
         const cacheKey = `${bucket.bucketName}:${path}`;
@@ -117,7 +66,6 @@ export async function readFile(path: string, bucketName?: string): Promise<strin
     const cache = getCache(bucketName);
     const cacheKey = `${bucket.bucketName}:${path}`;
 
-    // Check cache first if enabled and includes reads
     if (cache && bucket.cacheOptions?.enabled && bucket.cacheOptions?.includeReads !== false) {
         const cachedContent = cache.get(cacheKey);
         if (cachedContent !== null) {
@@ -126,44 +74,9 @@ export async function readFile(path: string, bucketName?: string): Promise<strin
     }
 
     try {
-        let content: string;
-        if (bucket.provider === "memory") {
-            const client = bucket.client as MemoryStorage;
-            const fileContent = client.read(path);
-            if (!fileContent) {
-                return null;
-            }
-            content = new TextDecoder().decode(fileContent);
-        } else if (bucket.provider === "fs") {
-            const client = bucket.client as FSStorage;
-            const fileContent = await client.read(path);
-            if (!fileContent) {
-                return null;
-            }
-            content = new TextDecoder().decode(fileContent);
-        } else if (bucket.provider === "gcs") {
-            const client = bucket.client as Storage;
-            const bucketInstance = client.bucket(bucket.bucketName);
-            const file = bucketInstance.file(path);
-            const [fileContent] = await file.download();
-            //const [metadata] = await file.getMetadata();
-            content = new TextDecoder().decode(fileContent);
-        } else {
-            const client = bucket.client as S3Client;
-            const { GetObjectCommand } = await getS3Commands();
-            const command = new GetObjectCommand({
-                Bucket: bucket.bucketName,
-                Key: path,
-            });
-            const response = await client.send(command);
-            if (!response.Body) {
-                throw new Error(`File ${path} not found`);
-            }
-            content = await response.Body.transformToString();
-        }
+        const content = await bucket.plugin.read(bucket.bucketName, path);
 
-        // Store in cache if enabled
-        if (cache && bucket.cacheOptions?.enabled && bucket.cacheOptions?.includeReads !== false) {
+        if (content !== null && cache && bucket.cacheOptions?.enabled && bucket.cacheOptions?.includeReads !== false) {
             cache.set(cacheKey, content);
         }
 
@@ -224,42 +137,9 @@ export async function readBuffer(path: string, bucketName?: string): Promise<Uin
     }
 
     try {
-        let content: Uint8Array;
-        if (bucket.provider === "memory") {
-            const client = bucket.client as MemoryStorage;
-            const fileContent = client.read(path);
-            if (!fileContent) {
-                return null;
-            }
-            content = fileContent;
-        } else if (bucket.provider === "fs") {
-            const client = bucket.client as FSStorage;
-            const fileContent = await client.read(path);
-            if (!fileContent) {
-                return null;
-            }
-            content = fileContent;
-        } else if (bucket.provider === "gcs") {
-            const client = bucket.client as Storage;
-            const bucketInstance = client.bucket(bucket.bucketName);
-            const file = bucketInstance.file(path);
-            const [fileContent] = await file.download();
-            content = fileContent;
-        } else {
-            const client = bucket.client as S3Client;
-            const { GetObjectCommand } = await getS3Commands();
-            const command = new GetObjectCommand({
-                Bucket: bucket.bucketName,
-                Key: path,
-            });
-            const response = await client.send(command);
-            if (!response.Body) {
-                throw new Error(`File ${path} not found`);
-            }
-            content = await response.Body.transformToByteArray();
-        }
+        const content = await bucket.plugin.readBuffer(bucket.bucketName, path);
 
-        if (cache && bucket.cacheOptions?.enabled && bucket.cacheOptions?.includeReads !== false) {
+        if (content !== null && cache && bucket.cacheOptions?.enabled && bucket.cacheOptions?.includeReads !== false) {
             cache.set(cacheKey, content);
         }
 
@@ -301,28 +181,8 @@ export async function deleteFile(path: string, bucketName?: string): Promise<voi
         throw new Error(`Bucket ${bucketName || "default"} not initialized`);
     }
 
-    if (bucket.provider === "memory") {
-        const client = bucket.client as MemoryStorage;
-        client.delete(path);
-    } else if (bucket.provider === "fs") {
-        const client = bucket.client as FSStorage;
-        await client.delete(path);
-    } else if (bucket.provider === "gcs") {
-        const client = bucket.client as Storage;
-        const bucketInstance = client.bucket(bucket.bucketName);
-        const file = bucketInstance.file(path);
-        await file.delete();
-    } else {
-        const client = bucket.client as S3Client;
-        const { DeleteObjectCommand } = await getS3Commands();
-        const command = new DeleteObjectCommand({
-            Bucket: bucket.bucketName,
-            Key: path,
-        });
-        await client.send(command);
-    }
+    await bucket.plugin.delete(bucket.bucketName, path);
 
-    // Invalidate cache
     const cache = getCache(bucketName);
     if (cache) {
         const cacheKey = `${bucket.bucketName}:${path}`;
@@ -368,54 +228,20 @@ export async function moveFile(oldPath: string, newPath: string, bucketName?: st
     const oldCacheKey = `${bucket.bucketName}:${oldPath}`;
     const newCacheKey = `${bucket.bucketName}:${newPath}`;
 
-    // Get cached content before move if available
     let cachedContent: string | Uint8Array | null = null;
     if (cache) {
         cachedContent = cache.get(oldCacheKey);
-        // Remove old path and new path from cache (in case new path existed)
         cache.delete(oldCacheKey);
         cache.delete(newCacheKey);
     }
 
     try {
-        if (bucket.provider === "memory") {
-            const client = bucket.client as MemoryStorage;
-            client.copy(oldPath, newPath);
-            client.delete(oldPath);
-        } else if (bucket.provider === "fs") {
-            const client = bucket.client as FSStorage;
-            await client.copy(oldPath, newPath);
-            await client.delete(oldPath);
-        } else if (bucket.provider === "gcs") {
-            const client = bucket.client as Storage;
-            const bucketInstance = client.bucket(bucket.bucketName);
-            const oldFile = bucketInstance.file(oldPath);
-            const newFile = bucketInstance.file(newPath);
+        await bucket.plugin.move(bucket.bucketName, oldPath, newPath);
 
-            await oldFile.copy(newFile);
-            await oldFile.delete();
-        } else {
-            const client = bucket.client as S3Client;
-            const { CopyObjectCommand, DeleteObjectCommand } = await getS3Commands();
-            const copyCommand = new CopyObjectCommand({
-                Bucket: bucket.bucketName,
-                CopySource: `${bucket.bucketName}/${oldPath}`,
-                Key: newPath,
-            });
-            await client.send(copyCommand);
-            const deleteCommand = new DeleteObjectCommand({
-                Bucket: bucket.bucketName,
-                Key: oldPath,
-            });
-            await client.send(deleteCommand);
-        }
-
-        // If content was cached, preserve it for new path
         if (cache && cachedContent !== null && bucket.cacheOptions?.enabled) {
             cache.set(newCacheKey, cachedContent);
         }
     } catch (error) {
-        // Improve error handling
         throw new Error(`Failed to move/rename file from ${oldPath} to ${newPath}: ${error}`);
     }
 }
@@ -448,27 +274,7 @@ export async function listFiles(prefix?: string, bucketName?: string): Promise<s
         throw new Error(`Bucket ${bucketName || "default"} not initialized`);
     }
 
-    if (bucket.provider === "memory") {
-        const client = bucket.client as MemoryStorage;
-        return client.list(prefix);
-    } else if (bucket.provider === "fs") {
-        const client = bucket.client as FSStorage;
-        return await client.list(prefix);
-    } else if (bucket.provider === "gcs") {
-        const client = bucket.client as Storage;
-        const bucketInstance = client.bucket(bucket.bucketName);
-        const [files] = await bucketInstance.getFiles({ prefix: prefix || "" });
-        return files.map((file) => file.name);
-    } else {
-        const client = bucket.client as S3Client;
-        const { ListObjectsV2Command } = await getS3Commands();
-        const command = new ListObjectsV2Command({
-            Bucket: bucket.bucketName,
-            Prefix: prefix || "",
-        });
-        const response = await client.send(command);
-        return (response.Contents || []).map((item: _Object) => item.Key || "");
-    }
+    return await bucket.plugin.list(bucket.bucketName, prefix);
 }
 
 /**
@@ -498,28 +304,7 @@ export async function fileExists(path: string, bucketName?: string): Promise<boo
     }
 
     try {
-        if (bucket.provider === "memory") {
-            const client = bucket.client as MemoryStorage;
-            return client.exists(path);
-        } else if (bucket.provider === "fs") {
-            const client = bucket.client as FSStorage;
-            return await client.exists(path);
-        } else if (bucket.provider === "gcs") {
-            const client = bucket.client as Storage;
-            const bucketInstance = client.bucket(bucket.bucketName);
-            const file = bucketInstance.file(path);
-            const [exists] = await file.exists();
-            return exists;
-        } else {
-            const client = bucket.client as S3Client;
-            const { HeadObjectCommand } = await getS3Commands();
-            const command = new HeadObjectCommand({
-                Bucket: bucket.bucketName,
-                Key: path,
-            });
-            await client.send(command);
-            return true;
-        }
+        return await bucket.plugin.exists(bucket.bucketName, path);
     } catch (error) {
         if ((error as Error).name === "NotFound") {
             return false;
@@ -548,28 +333,7 @@ export async function checkBucketAuth(bucketName?: string): Promise<boolean> {
         throw new Error(`Bucket ${bucketName || "default"} not initialized`);
     }
     try {
-        if (bucket.provider === "memory") {
-            // Memory provider is always available
-            return true;
-        } else if (bucket.provider === "fs") {
-            // For fs provider, check if root directory exists and is accessible
-            const client = bucket.client as FSStorage;
-            const { exists, isDir } = await import("@cross/fs/stat");
-            const rootPath = client.root;
-            return (await exists(rootPath)) && (await isDir(rootPath));
-        } else if (bucket.provider === "gcs") {
-            const client = bucket.client as Storage;
-            const bucketInstance = client.bucket(bucket.bucketName);
-            await bucketInstance.getMetadata();
-            return true;
-        } else {
-            // S3, R2, Spaces
-            const client = bucket.client as S3Client;
-            const { HeadBucketCommand } = await getS3Commands();
-            const command = new HeadBucketCommand({ Bucket: bucket.bucketName });
-            await client.send(command);
-            return true;
-        }
+        return await bucket.plugin.checkAuth(bucket.bucketName);
     } catch (error) {
         if (error && typeof error === "object") {
             // Check for Forbidden error by name

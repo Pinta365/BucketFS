@@ -1,9 +1,7 @@
-import type { S3Client } from "@aws-sdk/client-s3";
-import type { Storage } from "@google-cloud/storage";
 import { Cache, removeCache, setCache } from "./cache.ts";
 import type { CacheOptions } from "./cache.ts";
-import { MemoryStorage } from "./memoryStorage.ts";
-import { FSStorage } from "./fsStorage.ts";
+import { pluginRegistry } from "./plugin.ts";
+import type { ProviderPlugin } from "./plugin.ts";
 
 /**
  * Supported cloud storage providers.
@@ -124,8 +122,8 @@ export interface BucketConfig {
  * Represents an initialized bucket instance.
  */
 export interface BucketInstance {
-    /** The storage client instance */
-    client: S3Client | Storage | MemoryStorage | FSStorage;
+    /** The storage plugin instance */
+    plugin: ProviderPlugin;
     /** The name of the bucket */
     bucketName: string;
     /** The storage provider */
@@ -134,7 +132,6 @@ export interface BucketInstance {
     cacheOptions?: CacheOptions;
 }
 
-// Map to store multiple bucket instances
 const bucketInstances = new Map<string, BucketInstance>();
 
 /**
@@ -163,147 +160,25 @@ const bucketInstances = new Map<string, BucketInstance>();
  * ```
  */
 export async function initBucket(config: BucketConfig, name?: string): Promise<string> {
-    const { provider, bucketName, region, accountId, projectId, credentials, rootDirectory } = config;
+    const { provider, bucketName } = config;
     const instanceName = name || bucketName;
 
-    if (provider !== "memory" && provider !== "fs" && !credentials) {
-        throw new Error("Credentials are required");
-    }
+    const plugin = await pluginRegistry.getPlugin(config as Parameters<typeof pluginRegistry.getPlugin>[0]);
 
-    if (provider === "aws-s3" || provider === "do-spaces") {
-        if (!region) {
-            throw new Error("Region is required for AWS S3/Spaces provider");
-        }
-        if (!(credentials as S3Credentials).accessKeyId || !(credentials as S3Credentials).secretAccessKey) {
-            throw new Error("Access key and secret key are required for AWS S3/Spaces provider");
-        }
-        const { S3Client } = await import("@aws-sdk/client-s3");
-        bucketInstances.set(instanceName, {
-            client: new S3Client({
-                region,
-                endpoint: provider === "do-spaces" ? `https://${region}.digitaloceanspaces.com` : undefined,
-                credentials: {
-                    accessKeyId: (credentials as S3Credentials).accessKeyId,
-                    secretAccessKey: (credentials as S3Credentials).secretAccessKey,
-                },
-            }),
-            bucketName,
-            provider,
-            cacheOptions: config.cache,
-        });
+    bucketInstances.set(instanceName, {
+        plugin,
+        bucketName,
+        provider,
+        cacheOptions: config.cache,
+    });
 
-        // Initialize cache if enabled
-        if (config.cache?.enabled) {
-            const cache = new Cache(
-                config.cache.maxSize ?? 1000,
-                config.cache.maxMemorySize,
-                config.cache.ttl,
-            );
-            setCache(instanceName, cache);
-        }
-    } else if (provider === "cf-r2") {
-        if (!accountId) {
-            throw new Error("Account ID is required for Cloudflare R2 provider");
-        }
-        if (!(credentials as S3Credentials).accessKeyId || !(credentials as S3Credentials).secretAccessKey) {
-            throw new Error("Access key and secret key are required for Cloudflare R2 provider");
-        }
-        const { S3Client } = await import("@aws-sdk/client-s3");
-        bucketInstances.set(instanceName, {
-            client: new S3Client({
-                region: "auto",
-                endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-                credentials: {
-                    accessKeyId: (credentials as S3Credentials).accessKeyId,
-                    secretAccessKey: (credentials as S3Credentials).secretAccessKey,
-                },
-            }),
-            bucketName,
-            provider,
-            cacheOptions: config.cache,
-        });
-
-        // Initialize cache if enabled
-        if (config.cache?.enabled) {
-            const cache = new Cache(
-                config.cache.maxSize ?? 1000,
-                config.cache.maxMemorySize,
-                config.cache.ttl,
-            );
-            setCache(instanceName, cache);
-        }
-    } else if (provider === "gcs") {
-        if (!projectId) {
-            throw new Error("Project ID is required for Google Cloud Storage provider");
-        }
-        if (!(credentials as GCSCredentials).clientEmail || !(credentials as GCSCredentials).privateKey) {
-            throw new Error("Client email and private key are required for Google Cloud Storage provider");
-        }
-        const { Storage } = await import("@google-cloud/storage");
-        bucketInstances.set(instanceName, {
-            client: new Storage({
-                projectId,
-                credentials: {
-                    client_email: (credentials as GCSCredentials).clientEmail,
-                    private_key: (credentials as GCSCredentials).privateKey,
-                },
-            }),
-            bucketName,
-            provider,
-            cacheOptions: config.cache,
-        });
-
-        // Initialize cache if enabled
-        if (config.cache?.enabled) {
-            const cache = new Cache(
-                config.cache.maxSize ?? 1000,
-                config.cache.maxMemorySize,
-                config.cache.ttl,
-            );
-            setCache(instanceName, cache);
-        }
-    } else if (provider === "memory") {
-        // In-memory storage - no credentials needed
-        bucketInstances.set(instanceName, {
-            client: new MemoryStorage(),
-            bucketName,
-            provider,
-            cacheOptions: config.cache,
-        });
-
-        // Note: Caching is typically not needed for memory provider since it's already in memory
-        // But we support it for consistency
-        if (config.cache?.enabled) {
-            const cache = new Cache(
-                config.cache.maxSize ?? 1000,
-                config.cache.maxMemorySize,
-                config.cache.ttl,
-            );
-            setCache(instanceName, cache);
-        }
-    } else if (provider === "fs") {
-        // Filesystem storage - requires rootDirectory
-        if (!rootDirectory) {
-            throw new Error("Root directory is required for filesystem provider");
-        }
-        bucketInstances.set(instanceName, {
-            client: new FSStorage(rootDirectory),
-            bucketName,
-            provider,
-            cacheOptions: config.cache,
-        });
-
-        // Initialize cache if enabled
-        if (config.cache?.enabled) {
-            const cache = new Cache(
-                config.cache.maxSize ?? 1000,
-                config.cache.maxMemorySize,
-                config.cache.ttl,
-            );
-            setCache(instanceName, cache);
-        }
-    } else {
-        throw new Error(`Unsupported provider: ${provider}`);
+    if (config.cache?.enabled) {
+        const cache = new Cache(
+            config.cache.maxSize ?? 1000,
+            config.cache.maxMemorySize,
+            config.cache.ttl,
+        );
+        setCache(instanceName, cache);
     }
 
     return instanceName;
@@ -354,7 +229,6 @@ export function resetBucket(name?: string): void {
         bucketInstances.delete(name);
         removeCache(name);
     } else {
-        // Clear all caches before clearing bucket instances
         const bucketNames = Array.from(bucketInstances.keys());
         bucketNames.forEach((name) => removeCache(name));
         bucketInstances.clear();

@@ -134,8 +134,7 @@ class PluginRegistry {
      */
     private async loadPlugin(provider: string): Promise<void> {
         try {
-            const pluginPath = new URL(`./plugins/${provider}/index.ts`, import.meta.url).href;
-            const pluginModule = await import(pluginPath);
+            const pluginModule = await import(`./plugins/${provider}/index.ts`);
             if (pluginModule.createPlugin && typeof pluginModule.createPlugin === "function") {
                 this.register(provider, pluginModule.createPlugin);
             } else {

@@ -4,9 +4,9 @@
  * Uses standard runtime APIs to avoid external dependencies.
  */
 
-export { readFile, writeFile, mkdir, readdir, unlink } from "node:fs/promises";
+export { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 export { dirname, join, normalize } from "node:path";
-import { stat, mkdir } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -93,24 +93,23 @@ export async function mktempdir(prefix?: string): Promise<string> {
     if (typeof Deno !== "undefined" && Deno.makeTempDir) {
         return await Deno.makeTempDir({ prefix });
     }
-    
+
     // Fallback for Node.js/Bun: generate random directory name
     const tempDir = tmpdir();
-    
+
     // Generate a unique random suffix
     const timestamp = Date.now().toString(36);
     const randomPart1 = Math.random().toString(36).replace("0.", "");
     const randomPart2 = Math.random().toString(36).replace("0.", "");
     const randomSuffix = `${timestamp}-${randomPart1}-${randomPart2}`;
-    
+
     // Construct the directory path
     const dirPath = prefix
         ? join(tempDir, prefix.endsWith("-") ? `${prefix}${randomSuffix}` : `${prefix}-${randomSuffix}`)
         : join(tempDir, randomSuffix);
-    
+
     // Create the directory
     await mkdir(dirPath, { recursive: true });
-    
+
     return dirPath;
 }
-

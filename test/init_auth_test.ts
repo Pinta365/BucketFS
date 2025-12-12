@@ -1,6 +1,6 @@
 /**
  * To enable/disable provider tests, set the following environment variables to '1', 'true', or 'yes':
- *   TEST_GCS, TEST_S3, TEST_R2, TEST_DO
+ *   TEST_GCS, TEST_S3, TEST_R2, TEST_DO, TEST_DROPBOX
  * If the variable is not set, the default value below is used.
  */
 import "jsr:@cross/env@^1.0.2/load";
@@ -17,6 +17,7 @@ const TEST_GCS = envFlag("TEST_GCS", true);
 const TEST_S3 = envFlag("TEST_S3", true);
 const TEST_R2 = envFlag("TEST_R2", true);
 const TEST_DO = envFlag("TEST_DO", false);
+const TEST_DROPBOX = envFlag("TEST_DROPBOX", false);
 
 Deno.test({
     name: "BucketFS initBucket and authentication: Google Cloud Storage",
@@ -90,6 +91,23 @@ Deno.test({
         });
         const ok = await checkBucketAuth();
         if (!ok) throw new Error("Authentication failed for DigitalOcean Spaces");
+        resetBucket();
+    },
+});
+
+Deno.test({
+    name: "BucketFS initBucket and authentication: Dropbox",
+    ignore: !TEST_DROPBOX,
+    async fn() {
+        await initBucket({
+            provider: "dropbox",
+            bucketName: requireEnv("DROPBOX_BUCKET_NAME"),
+            credentials: {
+                accessToken: requireEnv("DROPBOX_ACCESS_TOKEN"),
+            },
+        });
+        const ok = await checkBucketAuth();
+        if (!ok) throw new Error("Authentication failed for Dropbox");
         resetBucket();
     },
 });

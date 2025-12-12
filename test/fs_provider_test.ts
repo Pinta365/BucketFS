@@ -2,7 +2,7 @@
  * Test file for the local filesystem (fs) provider.
  */
 import { assertEquals, assertExists } from "@std/assert";
-import { mktempdir } from "@cross/fs/ops";
+import { mktempdir } from "../src/plugins/fs/fsCompat.ts";
 import {
     checkBucketAuth,
     deleteFile,

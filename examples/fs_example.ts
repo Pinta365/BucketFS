@@ -3,11 +3,10 @@
  * that persists data to disk. Perfect for local development, testing, or when you need
  * persistent storage without cloud services.
  *
- * Note: The filesystem provider uses @cross/fs for cross-runtime compatibility (Deno, Node.js, Bun).
  * No credentials needed, just a root directory path!
  */
 
-import { mktempdir } from "jsr:@cross/fs@^0.1/ops";
+import { mktempdir } from "../src/plugins/fs/fsCompat.ts";
 import { deleteFile, fileExists, initBucket, listFiles, readBuffer, readFile, writeFile } from "../mod.ts";
 
 async function main() {

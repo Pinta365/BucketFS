@@ -1,175 +1,61 @@
 import type { ProviderPlugin } from "../../plugin.ts";
-import type { S3Client } from "@aws-sdk/client-s3";
+import {
+    checkBucketAccess,
+    copyObject,
+    deleteObject,
+    downloadObjectAsBuffer,
+    downloadObjectAsString,
+    listObjects,
+    objectExists,
+    uploadObject,
+} from "../s3-compatible/api.ts";
+import type { AWSCredentials } from "../s3-compatible/sigv4.ts";
+import type { S3EndpointConfig } from "../s3-compatible/api.ts";
 
 /**
  * Cloudflare R2 storage plugin implementation.
- * Uses AWS SDK v3 (R2 is S3-compatible).
+ * Uses S3 REST API directly via fetch
  */
 class CloudflareR2Plugin implements ProviderPlugin {
-    private client: S3Client;
-    private s3Commands: {
-        CopyObjectCommand: typeof import("@aws-sdk/client-s3").CopyObjectCommand;
-        DeleteObjectCommand: typeof import("@aws-sdk/client-s3").DeleteObjectCommand;
-        GetObjectCommand: typeof import("@aws-sdk/client-s3").GetObjectCommand;
-        HeadBucketCommand: typeof import("@aws-sdk/client-s3").HeadBucketCommand;
-        HeadObjectCommand: typeof import("@aws-sdk/client-s3").HeadObjectCommand;
-        ListObjectsV2Command: typeof import("@aws-sdk/client-s3").ListObjectsV2Command;
-        PutObjectCommand: typeof import("@aws-sdk/client-s3").PutObjectCommand;
-    } | null = null;
+    private credentials: AWSCredentials;
+    private config: S3EndpointConfig;
 
-    constructor(client: S3Client) {
-        this.client = client;
-    }
-
-    private async getS3Commands() {
-        if (!this.s3Commands) {
-            const s3Module = await import("@aws-sdk/client-s3");
-            this.s3Commands = {
-                CopyObjectCommand: s3Module.CopyObjectCommand,
-                DeleteObjectCommand: s3Module.DeleteObjectCommand,
-                GetObjectCommand: s3Module.GetObjectCommand,
-                HeadBucketCommand: s3Module.HeadBucketCommand,
-                HeadObjectCommand: s3Module.HeadObjectCommand,
-                ListObjectsV2Command: s3Module.ListObjectsV2Command,
-                PutObjectCommand: s3Module.PutObjectCommand,
-            };
-        }
-        return this.s3Commands;
+    constructor(credentials: AWSCredentials, config: S3EndpointConfig) {
+        this.credentials = credentials;
+        this.config = config;
     }
 
     async write(bucketName: string, path: string, content: string | Uint8Array): Promise<void> {
-        const commands = await this.getS3Commands();
-        const command = new commands.PutObjectCommand({
-            Bucket: bucketName,
-            Key: path,
-            Body: content,
-        });
-        await this.client.send(command);
+        await uploadObject(this.config.endpoint, bucketName, path, content, this.credentials, this.config);
     }
 
     async read(bucketName: string, path: string): Promise<string | null> {
-        try {
-            const commands = await this.getS3Commands();
-            const command = new commands.GetObjectCommand({
-                Bucket: bucketName,
-                Key: path,
-            });
-            const response = await this.client.send(command);
-            if (!response.Body) {
-                return null;
-            }
-            return await response.Body.transformToString();
-        } catch (error: unknown) {
-            if (error instanceof Error) {
-                if (error.name === "NoSuchKey" || error.name === "NotFound") {
-                    return null;
-                }
-                if ("code" in error && typeof error.code === "number" && error.code === 404) {
-                    return null;
-                }
-            }
-            throw error;
-        }
+        return await downloadObjectAsString(this.config.endpoint, bucketName, path, this.credentials, this.config);
     }
 
     async readBuffer(bucketName: string, path: string): Promise<Uint8Array | null> {
-        try {
-            const commands = await this.getS3Commands();
-            const command = new commands.GetObjectCommand({
-                Bucket: bucketName,
-                Key: path,
-            });
-            const response = await this.client.send(command);
-            if (!response.Body) {
-                return null;
-            }
-            return await response.Body.transformToByteArray();
-        } catch (error: unknown) {
-            if (error instanceof Error) {
-                if (error.name === "NoSuchKey" || error.name === "NotFound") {
-                    return null;
-                }
-                if ("code" in error && typeof error.code === "number" && error.code === 404) {
-                    return null;
-                }
-            }
-            throw error;
-        }
+        return await downloadObjectAsBuffer(this.config.endpoint, bucketName, path, this.credentials, this.config);
     }
 
     async delete(bucketName: string, path: string): Promise<void> {
-        const commands = await this.getS3Commands();
-        const command = new commands.DeleteObjectCommand({
-            Bucket: bucketName,
-            Key: path,
-        });
-        await this.client.send(command);
+        await deleteObject(this.config.endpoint, bucketName, path, this.credentials, this.config);
     }
 
     async move(bucketName: string, oldPath: string, newPath: string): Promise<void> {
-        const commands = await this.getS3Commands();
-        const copyCommand = new commands.CopyObjectCommand({
-            Bucket: bucketName,
-            CopySource: `${bucketName}/${oldPath}`,
-            Key: newPath,
-        });
-        await this.client.send(copyCommand);
-        const deleteCommand = new commands.DeleteObjectCommand({
-            Bucket: bucketName,
-            Key: oldPath,
-        });
-        await this.client.send(deleteCommand);
+        await copyObject(this.config.endpoint, bucketName, oldPath, newPath, this.credentials, this.config);
+        await deleteObject(this.config.endpoint, bucketName, oldPath, this.credentials, this.config);
     }
 
     async list(bucketName: string, prefix?: string): Promise<string[]> {
-        const commands = await this.getS3Commands();
-        const command = new commands.ListObjectsV2Command({
-            Bucket: bucketName,
-            Prefix: prefix || "",
-        });
-        const response = await this.client.send(command);
-        return (response.Contents || []).map((item) => item.Key || "").filter((key) => key !== "");
+        return await listObjects(this.config.endpoint, bucketName, prefix, this.credentials, this.config);
     }
 
     async exists(bucketName: string, path: string): Promise<boolean> {
-        try {
-            const commands = await this.getS3Commands();
-            const command = new commands.HeadObjectCommand({
-                Bucket: bucketName,
-                Key: path,
-            });
-            await this.client.send(command);
-            return true;
-        } catch (error) {
-            if ((error as Error).name === "NotFound") {
-                return false;
-            }
-            throw error;
-        }
+        return await objectExists(this.config.endpoint, bucketName, path, this.credentials, this.config);
     }
 
     async checkAuth(bucketName: string): Promise<boolean> {
-        try {
-            const commands = await this.getS3Commands();
-            const command = new commands.HeadBucketCommand({ Bucket: bucketName });
-            await this.client.send(command);
-            return true;
-        } catch (error) {
-            if (error && typeof error === "object") {
-                // Check for Forbidden error by name
-                if ("name" in error && error.name === "Forbidden") {
-                    return false;
-                }
-                // Check for AWS SDK error with 403 status code
-                if ("$metadata" in error && typeof error.$metadata === "object" && error.$metadata !== null) {
-                    const metadata = error.$metadata as { httpStatusCode?: number };
-                    if (metadata.httpStatusCode === 403) {
-                        return false;
-                    }
-                }
-            }
-            return false;
-        }
+        return await checkBucketAccess(this.config.endpoint, bucketName, this.credentials, this.config);
     }
 }
 
@@ -178,7 +64,7 @@ class CloudflareR2Plugin implements ProviderPlugin {
  * @param config Full bucket configuration
  * @returns A new CloudflareR2Plugin instance
  */
-export async function createPlugin(config: {
+export function createPlugin(config: {
     provider: string;
     bucketName: string;
     region?: string;
@@ -196,15 +82,16 @@ export async function createPlugin(config: {
         throw new Error("Access key and secret key are required for Cloudflare R2 provider");
     }
 
-    const { S3Client } = await import("@aws-sdk/client-s3");
-    const client = new S3Client({
-        region: "auto",
-        endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`,
-        credentials: {
-            accessKeyId: credentials.accessKeyId,
-            secretAccessKey: credentials.secretAccessKey,
-        },
-    });
+    const awsCredentials: AWSCredentials = {
+        accessKeyId: credentials.accessKeyId,
+        secretAccessKey: credentials.secretAccessKey,
+    };
 
-    return new CloudflareR2Plugin(client);
+    const endpointConfig: S3EndpointConfig = {
+        endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`,
+        region: "auto",
+        forcePathStyle: true,
+    };
+
+    return Promise.resolve(new CloudflareR2Plugin(awsCredentials, endpointConfig));
 }

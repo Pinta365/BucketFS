@@ -1,9 +1,10 @@
 import type { ProviderPlugin } from "../../plugin.ts";
 import { FSStorage } from "./storage.ts";
+import { exists, isDir } from "./fsCompat.ts";
 
 /**
  * Filesystem storage plugin implementation.
- * Stores files on the local filesystem using @cross/fs.
+ * Stores files on the local filesystem using cross-runtime compatible APIs.
  */
 class FSPlugin implements ProviderPlugin {
     private storage: FSStorage;
@@ -46,7 +47,6 @@ class FSPlugin implements ProviderPlugin {
     }
 
     async checkAuth(_bucketName: string): Promise<boolean> {
-        const { exists, isDir } = await import("@cross/fs/stat");
         const rootPath = this.storage.root;
         return (await exists(rootPath)) && (await isDir(rootPath));
     }

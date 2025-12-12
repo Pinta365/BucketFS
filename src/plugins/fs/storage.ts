@@ -1,11 +1,8 @@
 /**
  * Local filesystem storage implementation for fs bucket provider.
- * Uses @cross/fs for cross-runtime compatibility (Deno, Node.js, Bun).
+ * Uses cross-runtime compatible filesystem APIs (Deno, Node.js, Bun).
  */
-import { readFile, writeFile } from "@cross/fs/io";
-import { mkdir, readdir, unlink } from "@cross/fs/ops";
-import { exists, isDir, isFile } from "@cross/fs/stat";
-import { dirname, join, normalize } from "@std/path";
+import { readFile, writeFile, mkdir, readdir, unlink, exists, isDir, isFile, dirname, join, normalize } from "./fsCompat.ts";
 
 export class FSStorage {
     private rootDirectory: string;
@@ -18,9 +15,7 @@ export class FSStorage {
      * Get the full path for a file.
      */
     private getFullPath(path: string): string {
-        // Normalize the path to prevent directory traversal
         const normalizedPath = normalize(path);
-        // Remove leading slashes to prevent absolute paths
         const safePath = normalizedPath.replace(/^\/+/, "");
         return join(this.rootDirectory, safePath);
     }
@@ -33,12 +28,10 @@ export class FSStorage {
         const fullPath = this.getFullPath(path);
         const dirPath = dirname(fullPath);
 
-        // Create parent directories if they don't exist
         if (dirPath && dirPath !== this.rootDirectory) {
             try {
                 await mkdir(dirPath, { recursive: true });
             } catch (error) {
-                // Ignore error if directory already exists
                 if (!(await exists(dirPath))) {
                     throw error;
                 }

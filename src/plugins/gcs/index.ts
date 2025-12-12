@@ -1,105 +1,66 @@
 import type { ProviderPlugin } from "../../plugin.ts";
-import type { Storage } from "@google-cloud/storage";
+import {
+    copyObject,
+    deleteObject,
+    downloadObjectAsBuffer,
+    downloadObjectAsString,
+    getBucketMetadata,
+    listObjects,
+    objectExists,
+    uploadObject,
+} from "./api.ts";
+import type { ServiceAccountCredentials } from "./auth.ts";
 
 /**
  * Google Cloud Storage plugin implementation.
- * Uses @google-cloud/storage SDK.
+ * Uses GCS JSON API directly via fetch
  */
 class GCSPlugin implements ProviderPlugin {
-    private client: Storage;
+    private credentials: ServiceAccountCredentials;
 
-    constructor(client: Storage) {
-        this.client = client;
+    constructor(credentials: ServiceAccountCredentials) {
+        this.credentials = credentials;
     }
 
     async write(bucketName: string, path: string, content: string | Uint8Array): Promise<void> {
-        const bucketInstance = this.client.bucket(bucketName);
-        const file = bucketInstance.file(path);
-        await file.save(content);
+        await uploadObject(this.credentials, bucketName, path, content);
     }
 
     async read(bucketName: string, path: string): Promise<string | null> {
-        try {
-            const bucketInstance = this.client.bucket(bucketName);
-            const file = bucketInstance.file(path);
-            const [fileContent] = await file.download();
-            return new TextDecoder().decode(fileContent);
-        } catch (error: unknown) {
-            if (error instanceof Error) {
-                if (error.name === "NoSuchKey" || error.name === "NotFound") {
-                    return null;
-                }
-                if ("code" in error && typeof error.code === "number" && error.code === 404) {
-                    return null;
-                }
-            }
-            throw error;
-        }
+        return await downloadObjectAsString(this.credentials, bucketName, path);
     }
 
     async readBuffer(bucketName: string, path: string): Promise<Uint8Array | null> {
-        try {
-            const bucketInstance = this.client.bucket(bucketName);
-            const file = bucketInstance.file(path);
-            const [fileContent] = await file.download();
-            return fileContent;
-        } catch (error: unknown) {
-            if (error instanceof Error) {
-                if (error.name === "NoSuchKey" || error.name === "NotFound") {
-                    return null;
-                }
-                if ("code" in error && typeof error.code === "number" && error.code === 404) {
-                    return null;
-                }
-            }
-            throw error;
-        }
+        return await downloadObjectAsBuffer(this.credentials, bucketName, path);
     }
 
     async delete(bucketName: string, path: string): Promise<void> {
-        const bucketInstance = this.client.bucket(bucketName);
-        const file = bucketInstance.file(path);
-        await file.delete();
+        await deleteObject(this.credentials, bucketName, path);
     }
 
     async move(bucketName: string, oldPath: string, newPath: string): Promise<void> {
-        const bucketInstance = this.client.bucket(bucketName);
-        const oldFile = bucketInstance.file(oldPath);
-        const newFile = bucketInstance.file(newPath);
-
-        await oldFile.copy(newFile);
-        await oldFile.delete();
+        await copyObject(this.credentials, bucketName, oldPath, newPath);
+        await deleteObject(this.credentials, bucketName, oldPath);
     }
 
     async list(bucketName: string, prefix?: string): Promise<string[]> {
-        const bucketInstance = this.client.bucket(bucketName);
-        const [files] = await bucketInstance.getFiles({ prefix: prefix || "" });
-        return files.map((file) => file.name);
+        return await listObjects(this.credentials, bucketName, prefix);
     }
 
     async exists(bucketName: string, path: string): Promise<boolean> {
-        try {
-            const bucketInstance = this.client.bucket(bucketName);
-            const file = bucketInstance.file(path);
-            const [exists] = await file.exists();
-            return exists;
-        } catch (error) {
-            if ((error as Error).name === "NotFound") {
-                return false;
-            }
-            throw error;
-        }
+        return await objectExists(this.credentials, bucketName, path);
     }
 
     async checkAuth(bucketName: string): Promise<boolean> {
         try {
-            const bucketInstance = this.client.bucket(bucketName);
-            await bucketInstance.getMetadata();
+            await getBucketMetadata(this.credentials, bucketName);
             return true;
         } catch (error) {
-            if (error && typeof error === "object") {
-                // Check for Forbidden error by name
-                if ("name" in error && error.name === "Forbidden") {
+            if (error instanceof Error) {
+                if (error.message.includes("403") || error.message.includes("Forbidden")) {
+                    return false;
+                }
+                if (error.message.includes("401") || error.message.includes("Unauthorized")) {
                     return false;
                 }
             }
@@ -113,7 +74,7 @@ class GCSPlugin implements ProviderPlugin {
  * @param config Full bucket configuration
  * @returns A new GCSPlugin instance
  */
-export async function createPlugin(config: {
+export function createPlugin(config: {
     provider: string;
     bucketName: string;
     region?: string;
@@ -126,19 +87,16 @@ export async function createPlugin(config: {
     if (!config.projectId) {
         throw new Error("Project ID is required for Google Cloud Storage provider");
     }
-    const credentials = config.credentials as { clientEmail?: string; privateKey?: string } | undefined;
+    const credentials = config.credentials as { clientEmail?: string; privateKey?: string; scope?: string } | undefined;
     if (!credentials?.clientEmail || !credentials?.privateKey) {
         throw new Error("Client email and private key are required for Google Cloud Storage provider");
     }
 
-    const { Storage } = await import("@google-cloud/storage");
-    const client = new Storage({
-        projectId: config.projectId,
-        credentials: {
-            client_email: credentials.clientEmail,
-            private_key: credentials.privateKey,
-        },
-    });
+    const serviceAccountCredentials: ServiceAccountCredentials = {
+        clientEmail: credentials.clientEmail,
+        privateKey: credentials.privateKey,
+        scope: credentials.scope,
+    };
 
-    return new GCSPlugin(client);
+    return Promise.resolve(new GCSPlugin(serviceAccountCredentials));
 }

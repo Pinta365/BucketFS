@@ -9,10 +9,11 @@ import type { ProviderPlugin } from "./plugin.ts";
  * - `cf-r2`: Cloudflare R2
  * - `gcs`: Google Cloud Storage
  * - `do-spaces`: DigitalOcean Spaces
+ * - `dropbox`: Dropbox cloud storage
  * - `memory`: In-memory only storage (no persistence, useful for testing)
  * - `fs`: Local filesystem storage (cross-runtime compatible)
  */
-export type StorageProvider = "aws-s3" | "cf-r2" | "gcs" | "do-spaces" | "memory" | "fs";
+export type StorageProvider = "aws-s3" | "cf-r2" | "gcs" | "do-spaces" | "dropbox" | "memory" | "fs";
 
 /**
  * Credentials for S3-compatible storage providers (ex. S3, R2 and spaces).
@@ -32,6 +33,21 @@ interface GCSCredentials {
     clientEmail: string;
     /** GCP service account private key */
     privateKey: string;
+    /**
+     * Optional OAuth2 scope. Defaults to "devstorage.read_write" which provides
+     * read and write access. Use "devstorage.full_control" only if you need
+     * additional permissions. Note: Actual permissions are enforced by IAM roles
+     * assigned to the service account, not just the scope.
+     */
+    scope?: string;
+}
+
+/**
+ * Credentials for Dropbox.
+ */
+interface DropboxCredentials {
+    /** Dropbox access token */
+    accessToken: string;
 }
 
 /**
@@ -113,7 +129,7 @@ export interface BucketConfig {
     /** The root directory for filesystem provider (required for fs provider) */
     rootDirectory?: string;
     /** The credentials for the storage provider (not required for memory or fs provider) */
-    credentials?: S3Credentials | GCSCredentials;
+    credentials?: S3Credentials | GCSCredentials | DropboxCredentials;
     /** Optional cache configuration */
     cache?: CacheOptions;
 }

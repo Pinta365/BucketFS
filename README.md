@@ -9,8 +9,8 @@ Can also be used to persist storage in serverless environments (e.g., Deno Deplo
 
 ## Features
 
-- Support for multiple storage providers (Amazon S3, Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces, Memory,
-  Local Filesystem)
+- Support for multiple storage providers (Amazon S3, Cloudflare R2, Google Cloud Storage, DigitalOcean Spaces, Dropbox,
+  Memory, Local Filesystem)
 - Plugin-based architecture with lazy loading - dependencies are only loaded when needed
 - Optional in-memory caching for improved performance
 - Simple and consistent API for file operations
@@ -109,6 +109,31 @@ await initBucket({
 });
 ```
 
+### Dropbox
+
+Dropbox cloud storage integration. The `bucketName` acts as a folder path in your Dropbox account.
+
+The plugin requires the following permissions:
+
+- `files.content.write` - For writing files
+- `files.content.read` - For reading files
+- `files.metadata.read` - For listing files
+- `files.metadata.write` - For deleting/moving files
+
+* In "OAuth 2" section of the Dropbox developer console, click "Generate access token" (for development/testing)
+* For production, implement OAuth2 flow with these scopes (see
+  [Dropbox OAuth Guide](https://www.dropbox.com/developers/reference/oauth-guide))
+
+```typescript
+await initBucket({
+    provider: "dropbox",
+    bucketName: "my-folder", // Acts as a folder path in Dropbox
+    credentials: {
+        accessToken: "your-dropbox-access-token",
+    },
+});
+```
+
 ### Memory Provider
 
 The memory provider stores all data in memory only (no persistence). Perfect for testing, development, or temporary
@@ -143,17 +168,21 @@ await initBucket({
 
 ```typescript
 interface BucketConfig {
-    provider: "aws-s3" | "cf-r2" | "gcs" | "do-spaces" | "memory" | "fs";
+    provider: "aws-s3" | "cf-r2" | "gcs" | "do-spaces" | "dropbox" | "memory" | "fs";
     bucketName: string;
     region?: string; // Required for AWS S3 and DigitalOcean Spaces
     accountId?: string; // Required for Cloudflare R2
     projectId?: string; // Required for Google Cloud Storage
     rootDirectory?: string; // Required for filesystem provider
     credentials?: {
-        accessKeyId: string; // Required for AWS S3, Cloudflare R2, and DigitalOcean Spaces
-        secretAccessKey: string; // Required for AWS S3, Cloudflare R2, and DigitalOcean Spaces
-        clientEmail?: string; // Required for Google Cloud Storage
-        privateKey?: string; // Required for Google Cloud Storage
+        // For AWS S3, Cloudflare R2, and DigitalOcean Spaces:
+        accessKeyId?: string;
+        secretAccessKey?: string;
+        // For Google Cloud Storage:
+        clientEmail?: string;
+        privateKey?: string;
+        // For Dropbox:
+        accessToken?: string;
     }; // Not required for memory or fs provider
     cache?: {
         enabled: boolean;
